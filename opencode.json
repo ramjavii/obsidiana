@@ -1,0 +1,46 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "command": {
+    "test": {
+      "description": "Run the project's test suite (cargo test + vitest).",
+      "prompt": "Run the project's test suite. For Rust: `cargo test --workspace`. For frontend: `pnpm vitest run`. Report any failures with file paths and a one-line summary of each."
+    },
+    "lint": {
+      "description": "Run linters with --fix where possible.",
+      "prompt": "Run `cargo clippy --fix --allow-dirty --allow-staged` in `src-tauri/` and `pnpm eslint --fix` in the frontend. Report any remaining issues that could not be auto-fixed."
+    },
+    "dev": {
+      "description": "Start the Tauri dev server.",
+      "prompt": "Run `pnpm tauri dev` from the project root and stream the output. If the dev server is already running, say so instead of starting a second instance."
+    },
+    "build": {
+      "description": "Build a release desktop binary.",
+      "prompt": "Run `pnpm tauri build` from the project root. Stream the output and report the path of the produced binary on success."
+    },
+    "index-rebuild": {
+      "description": "Force-rebuild the SQLite index from scratch.",
+      "prompt": "Delete the vault's index file (locate it from the active vault path in `settings.json`, fall back to `<vault>/.obsidiana/index.db`), then re-open the vault so the Rust backend rebuilds the index. Report success and the new `index_status` IPC response."
+    }
+  },
+  "permission": {
+    "bash": {
+      "pnpm *": "allow",
+      "npm *": "allow",
+      "npx *": "allow",
+      "cargo *": "allow",
+      "rustc *": "allow",
+      "git *": "allow",
+      "vitest *": "allow",
+      "playwright *": "allow",
+      "ls *": "allow",
+      "cat *": "allow",
+      "tree *": "allow",
+      "find *": "allow",
+      "rg *": "allow",
+      "mkdir *": "allow",
+      "touch *": "allow",
+      "*": "ask"
+    }
+  }
+}
