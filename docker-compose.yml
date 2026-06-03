@@ -1,0 +1,25 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: obsidiana-dev:latest
+    container_name: obsidiana-dev
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - cargo-target:/usr/local/cargo/registry
+      - cargo-target-src:/workspace/src-tauri/target
+      - pnpm-store:/usr/local/share/pnpm/store
+    environment:
+      - CARGO_HOME=/usr/local/cargo
+      - RUST_BACKTRACE=1
+      - RUST_LOG=info
+    stdin_open: true
+    tty: true
+    command: ["sleep", "infinity"]
+
+volumes:
+  cargo-target:
+  cargo-target-src:
+  pnpm-store:
