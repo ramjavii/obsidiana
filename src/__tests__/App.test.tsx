@@ -41,9 +41,15 @@ describe("App", () => {
 
   it("shows the dev trigger when ?dev=1 and clicking it surfaces an error toast", async () => {
     window.history.replaceState({}, "", "/?dev=1");
-    invokeMock.mockImplementation(() =>
-      Promise.reject({ kind: "NotFound", data: { what: "ping_or_fail" } }),
-    );
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "ping_or_fail") {
+        return Promise.reject({
+          kind: "NotFound",
+          data: { what: "ping_or_fail" },
+        });
+      }
+      return Promise.resolve("pong");
+    });
     renderWithProviders(<App />);
     const button = await screen.findByTestId("trigger-error");
     const user = userEvent.setup();

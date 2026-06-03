@@ -53,7 +53,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
-                void pingOrFail();
+                void pingOrFail().catch(() => undefined);
               }}
               className="rounded border border-rose-700 px-2 py-1 text-rose-300 hover:bg-rose-900/40"
               data-testid="trigger-error"
