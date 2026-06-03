@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1.7
-FROM rust:1.79-bookworm
+# Bumped to rust:1.85 (was 1.79) because tauri-cli 2.0.0's transitive dep
+# tree now includes crates whose Cargo.toml uses edition = "2024". That
+# requires Cargo's edition2024 feature, which is only stable in Cargo
+# >= 1.85. The project's own MSRV (1.75) is unchanged; this is only
+# the dev image, and rust-toolchain.toml still says channel = "stable".
+FROM rust:1.85-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NODE_VERSION=20.18.0
