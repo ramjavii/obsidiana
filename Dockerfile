@@ -34,7 +34,19 @@ RUN corepack enable \
  && corepack prepare pnpm@9.12.1 --activate \
  && pnpm --version
 
-RUN cargo install tauri-cli --version "^2.0" --locked \
+# Install tauri-cli by cloning the tauri monorepo at the v2.0.0 tag.
+# vergen-gitcl (used by tauri-cli 2.x's build.rs) reads a build SHA via
+# `git rev-parse --is-inside-work-tree`. The Docker build context excludes
+# .git/ (see .dockerignore), so a `cargo install tauri-cli` from crates.io
+# fails: the build happens in a temp dir with no .git/, vergen exits 1,
+# and the whole RUN chain dies.
+#
+# Building from a git clone puts vergen inside a real .git/ tree, so
+# git rev-parse succeeds and the build completes. --locked is dropped
+# because the cloned repo's Cargo.lock is the source of truth.
+RUN cargo install --git https://github.com/tauri-apps/tauri \
+    --tag tauri-cli-v2.0.0 \
+    tauri-cli \
  && which tauri \
  && tauri --version
 
