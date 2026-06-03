@@ -54,8 +54,8 @@ RUN corepack enable \
 RUN cargo install --git https://github.com/tauri-apps/tauri \
     --tag tauri-cli-v2.0.0 \
     tauri-cli \
- && which tauri \
- && tauri --version
+ && which cargo-tauri \
+ && cargo-tauri --version
 
 WORKDIR /workspace
 
