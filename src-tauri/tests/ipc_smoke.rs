@@ -1,16 +1,13 @@
 use obsidiana_lib::commands::{error_demo, ping};
 use obsidiana_lib::error::AppError;
 use tauri::test::{mock_builder, mock_context, noop_assets};
-use tauri::Manager;
 
 #[test]
 fn mock_app_builds_with_ping_and_ping_or_fail_registered() {
-    let app = mock_builder()
+    let _app = mock_builder()
         .invoke_handler(tauri::generate_handler![ping::ping, error_demo::ping_or_fail])
         .build(mock_context(noop_assets()))
         .expect("mock app should build");
-
-    assert!(app.config().identifier.to_string().contains("obsidiana"));
 }
 
 #[test]

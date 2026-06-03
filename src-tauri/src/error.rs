@@ -13,8 +13,12 @@ pub enum AppError {
     #[error("invalid argument: {message}")]
     InvalidArgument { message: String },
 
-    #[error("io error on {path}: {source}")]
-    Io { path: String, source: String },
+    #[error("io error on {path}: {message}")]
+    Io {
+        path: String,
+        #[serde(rename = "source")]
+        message: String,
+    },
 }
 
 impl AppError {
@@ -37,7 +41,7 @@ impl AppError {
     pub fn from_io(path: impl Into<String>, err: &std::io::Error) -> Self {
         Self::Io {
             path: path.into(),
-            source: err.to_string(),
+            message: err.to_string(),
         }
     }
 }
@@ -90,7 +94,7 @@ mod tests {
     fn io_has_path_and_source_fields() {
         let err = AppError::Io {
             path: "/tmp/missing.md".to_string(),
-            source: "No such file or directory".to_string(),
+            message: "No such file or directory".to_string(),
         };
         let value = serde_json::to_value(&err).expect("serialize");
         assert_eq!(
@@ -110,9 +114,9 @@ mod tests {
         let io = std::io::Error::new(std::io::ErrorKind::NotFound, "nope");
         let err = AppError::from_io("/tmp/x.md", &io);
         match err {
-            AppError::Io { path, source } => {
+            AppError::Io { path, message } => {
                 assert_eq!(path, "/tmp/x.md");
-                assert_eq!(source, "nope");
+                assert_eq!(message, "nope");
             }
             other => panic!("expected Io, got {other:?}"),
         }
