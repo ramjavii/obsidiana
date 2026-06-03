@@ -8,10 +8,10 @@
 
 | Tool            | Version        | Why                                                |
 | --------------- | -------------- | -------------------------------------------------- |
-| Rust (stable)   | 1.79           | Tauri 2 requires Rust ≥ 1.75; 1.79 is current.     |
+| Rust (stable)   | 1.88           | Tauri 2 requires Rust ≥ 1.75. The transitive deps in tauri-cli 2.0.0 (darling 0.23, home 0.5.12, image 0.25.10, serde_with 3.20, time 0.3.47, built 0.8.1, icu_*, idna_adapter) push the floor to 1.88. The project's own MSRV is still 1.75; this is the dev image's Cargo. |
 | Node            | 20 LTS (20.18) | Tauri 2 requires Node ≥ 18; 20 LTS is current.     |
 | pnpm            | 9.12.1         | Current LTS line; matches `packageManager` field.  |
-| `tauri-cli`     | ^2.0           | Tauri 2 CLI, installed via `cargo install`.        |
+| `tauri-cli`     | 2.0.0          | Tauri 2 CLI, installed from `https://github.com/tauri-apps/tauri` at tag `tauri-cli-v2.0.0`. The crate's `build.rs` uses `vergen-gitcl`, which needs a real `.git/` tree; a `cargo install` from crates.io fails inside Docker because `.dockerignore` excludes `.git/`. Binary is `cargo-tauri`, not `tauri`. |
 
 The Tauri Rust crates (`tauri`, `tauri-build`) are pinned to `^2.0` in
 `src-tauri/Cargo.toml`. Do not bump them without an ADR in
@@ -32,6 +32,10 @@ docker compose run --rm dev pnpm tauri build
 The `dev` service mounts the project at `/workspace` and persists
 Cargo + pnpm caches across runs via named volumes (`cargo-target`,
 `cargo-target-src`, `pnpm-store`).
+
+If you change a tool pin (Rust, Node, pnpm, tauri-cli), update
+§Pinned versions above in the same commit. CI and the AI agent both
+build from this Dockerfile, so the docs are the contract.
 
 To open a shell:
 
