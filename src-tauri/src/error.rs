@@ -6,6 +6,15 @@ use thiserror::Error;
 pub enum AppError {
     #[error("internal error: {message}")]
     Internal { message: String },
+
+    #[error("not found: {what}")]
+    NotFound { what: String },
+
+    #[error("invalid argument: {message}")]
+    InvalidArgument { message: String },
+
+    #[error("io error on {path}: {source}")]
+    Io { path: String, source: String },
 }
 
 impl AppError {
@@ -14,6 +23,99 @@ impl AppError {
             message: message.into(),
         }
     }
+
+    pub fn not_found(what: impl Into<String>) -> Self {
+        Self::NotFound { what: what.into() }
+    }
+
+    pub fn invalid(message: impl Into<String>) -> Self {
+        Self::InvalidArgument {
+            message: message.into(),
+        }
+    }
+
+    pub fn from_io(path: impl Into<String>, err: &std::io::Error) -> Self {
+        Self::Io {
+            path: path.into(),
+            source: err.to_string(),
+        }
+    }
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn internal_serializes_as_kind_data_shape() {
+        let err = AppError::internal("boom");
+        let value = serde_json::to_value(&err).expect("serialize");
+        assert_eq!(value, json!({"kind": "Internal", "data": {"message": "boom"}}));
+    }
+
+    #[test]
+    fn internal_display_includes_message() {
+        let err = AppError::internal("boom");
+        assert_eq!(err.to_string(), "internal error: boom");
+    }
+
+    #[test]
+    fn not_found_has_what_field() {
+        let err = AppError::NotFound {
+            what: "vault".to_string(),
+        };
+        let value = serde_json::to_value(&err).expect("serialize");
+        assert_eq!(
+            value,
+            json!({"kind": "NotFound", "data": {"what": "vault"}})
+        );
+    }
+
+    #[test]
+    fn invalid_argument_has_message_field() {
+        let err = AppError::InvalidArgument {
+            message: "path contains ..".to_string(),
+        };
+        let value = serde_json::to_value(&err).expect("serialize");
+        assert_eq!(
+            value,
+            json!({"kind": "InvalidArgument", "data": {"message": "path contains .."}})
+        );
+    }
+
+    #[test]
+    fn io_has_path_and_source_fields() {
+        let err = AppError::Io {
+            path: "/tmp/missing.md".to_string(),
+            source: "No such file or directory".to_string(),
+        };
+        let value = serde_json::to_value(&err).expect("serialize");
+        assert_eq!(
+            value,
+            json!({
+                "kind": "Io",
+                "data": {
+                    "path": "/tmp/missing.md",
+                    "source": "No such file or directory"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn from_io_captures_path_and_message() {
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "nope");
+        let err = AppError::from_io("/tmp/x.md", &io);
+        match err {
+            AppError::Io { path, source } => {
+                assert_eq!(path, "/tmp/x.md");
+                assert_eq!(source, "nope");
+            }
+            other => panic!("expected Io, got {other:?}"),
+        }
+    }
+}
+

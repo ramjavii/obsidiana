@@ -1,11 +1,33 @@
 import { useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
+import { ipcInvoke } from "@/ipc";
+import { reportAppError } from "@/hooks/useToastStore";
+import { appErrorMessage } from "@/errors";
 
 async function ping(): Promise<string> {
-  return invoke<string>("ping");
+  const result = await ipcInvoke<string>("ping");
+  if (!result.ok) {
+    reportAppError(result.error);
+    throw new Error(appErrorMessage(result.error));
+  }
+  return result.value;
+}
+
+async function pingOrFail(): Promise<string> {
+  const result = await ipcInvoke<string>("ping_or_fail");
+  if (!result.ok) {
+    reportAppError(result.error);
+    throw new Error(appErrorMessage(result.error));
+  }
+  return result.value;
+}
+
+function isDevMode(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("dev") === "1";
 }
 
 export default function App() {
+  const devMode = isDevMode();
   const { data, isPending, isError, error } = useQuery({
     queryKey: ["ping"],
     queryFn: ping,
@@ -25,6 +47,21 @@ export default function App() {
             <span className="text-emerald-400">ping: {data}</span>
           )}
         </div>
+        {devMode && (
+          <div className="mt-8 flex flex-col items-center gap-2 text-xs text-zinc-500">
+            <span>dev mode (?dev=1)</span>
+            <button
+              type="button"
+              onClick={() => {
+                void pingOrFail();
+              }}
+              className="rounded border border-rose-700 px-2 py-1 text-rose-300 hover:bg-rose-900/40"
+              data-testid="trigger-error"
+            >
+              trigger AppError toast
+            </button>
+          </div>
+        )}
       </div>
     </main>
   );

@@ -35,13 +35,22 @@ obsidiana/
 ├── postcss.config.js
 ├── spec.md                              # technical spec
 ├── src/                                 # frontend (React 18 + TS strict + Tailwind)
-│   ├── App.tsx                          # OBSIDIANA title + ping result via TanStack Query
+│   ├── App.tsx                          # OBSIDIANA title + ping result + ?dev=1 error trigger
+│   ├── components/
+│   │   └── ToastHost.tsx                # global error/success/info toasts
 │   ├── env.d.ts
-│   ├── main.tsx                         # React 18 createRoot + QueryClientProvider
+│   ├── errors.ts                        # AppError TS discriminated union (mirrors Rust)
+│   ├── hooks/
+│   │   └── useToastStore.ts             # Zustand store + reportAppError() / reportError()
+│   ├── ipc.ts                           # typed invoke() wrapper → IpcResult<T>
+│   ├── main.tsx                         # React 18 createRoot + QueryClient + ToastHost
 │   ├── styles.css                       # @tailwind base/components/utilities
 │   └── __tests__/
-│       ├── App.test.tsx                 # renders "OBSIDIANA" + ping status
-│       └── setup.ts                     # mocks @tauri-apps/api/core, jest-dom, cleanup
+│       ├── App.test.tsx                 # renders "OBSIDIANA", ping result, ?dev=1 trigger
+│       ├── ToastHost.test.tsx           # push, dismiss, auto-TTL, stacking
+│       ├── errors.test.ts               # isAppError, parseAppError, appErrorMessage
+│       ├── ipc.test.ts                  # ok / AppError rejection / wrapped Internal
+│       └── setup.ts                     # mocks @tauri-apps/api/core + renderWithProviders()
 ├── src-tauri/                           # backend (Rust 2021, Tauri 2)
 │   ├── .gitignore                       # gen/, target/, WixTools/
 │   ├── Cargo.toml
@@ -57,13 +66,15 @@ obsidiana/
 │   ├── rust-toolchain.toml              # channel = "stable", rustfmt + clippy
 │   ├── src/
 │   │   ├── commands/
+│   │   │   ├── error_demo.rs           # ping_or_fail: dev-only error-surface fixture
 │   │   │   ├── mod.rs
 │   │   │   └── ping.rs                  # smoke IPC command, returns "pong"
-│   │   ├── error.rs                     # AppError enum (thiserror + serde tag/content)
-│   │   ├── lib.rs                       # tauri::Builder, invokes ping
+│   │   ├── error.rs                     # AppError enum (4 variants) + helpers + unit tests
+│   │   ├── lib.rs                       # tauri::Builder, registers ping + ping_or_fail
 │   │   └── main.rs                      # windows_subsystem = "windows" in release
 │   ├── tauri.conf.json                  # identifier = "com.obsidiana.app"
-│   └── tests/                           # (full IPC integration tests arrive in 1.2)
+│   └── tests/
+│       └── ipc_smoke.rs                 # tauri::test::mock_app() + direct-call tests
 ├── tailwind.config.ts
 ├── tsconfig.json                        # strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes
 ├── tsconfig.node.json                   # for vite/vitest/tailwind/eslint configs
@@ -87,6 +98,12 @@ obsidiana/
 | 2026-06-02 | App identifier `com.obsidiana.app`.                                                                                | Reverse-domain; used for macOS bundle ID, Windows AUMID, Linux desktop entry, OS app-data path. |
 | 2026-06-02 | Minimal `AppError` enum in 1.1 (single `Internal` variant). Full enum in micro-feature 1.2.                        | Keeps 1.1 a pure scaffold; full error taxonomy is a focused next step.                          |
 | 2026-06-02 | `ping` IPC command is a direct-call unit test in 1.1. Full `tauri::test::mock_app()` IPC test in 1.2+.            | The first IPC integration test with mock_app lands when we have meaningful state to test.        |
+| 2026-06-02 | **AppError taxonomy in 1.2:** 4 variants — `Internal`, `NotFound`, `InvalidArgument`, `Io`. Full 12+ taxonomy grows incrementally. | Subset is enough for micro-features 1.3-1.5; each new IPC command adds its own variant.       |
+| 2026-06-02 | **Frontend ↔ Rust error contract:** Rust `AppError` serializes as `{"kind": "Variant", "data": {...}}`. TS `AppError` is a discriminated union with `isAppError` / `parseAppError` / `appErrorMessage` helpers. | Single source of truth for both sides; drift is caught by `src/__tests__/errors.test.ts`.       |
+| 2026-06-02 | **Typed IPC wrapper:** `ipcInvoke<T>(cmd, args) → IpcResult<T>` returns `{ok, value}` or `{ok: false, error, raw}` instead of throwing. | The TanStack Query layer can branch on `result.ok` without try/catch noise; toast hook is the only place that translates `AppError` → user-visible message. |
+| 2026-06-02 | **Global toast surface:** single `<ToastHost>` mounted once in `main.tsx`, backed by a Zustand store. `useToastStore.push(kind, msg)` and `reportAppError(err)` are the only entry points. | No scattered toast components. The mutation `onError` in `QueryClient` is the default catch-all. |
+| 2026-06-02 | **Dev-only error trigger:** `?dev=1` URL param reveals a "trigger AppError toast" button in `App.tsx` that invokes the Rust `ping_or_fail` command. The command is always registered (so the test path is real), but the frontend never calls it outside dev mode. | Lets us manually verify the toast path in the running app without waiting for a real error to happen. |
+| 2026-06-02 | **First real `tauri::test::mock_app()` IPC test** in 1.2 (`src-tauri/tests/ipc_smoke.rs`): builds a mock app with the command registered, plus a direct-call round-trip and a JSON-shape assertion for the error path. | Establishes the test pattern every later `#[tauri::command]` will copy. |
 
 ## Toolchain
 
@@ -102,11 +119,54 @@ The Dockerfile is the source of truth. Devcontainer and host-native installs mus
 
 ## IPC Commands
 
-See `spec.md` §4 for the full contract. Implemented in 1.1:
+See `spec.md` §4 for the full contract. Implemented so far:
 
-- `ping` — smoke test. Returns `Ok("pong")`. No args.
+- `ping` — smoke test. Returns `Ok("pong")`. No args. (micro-feature 1.1)
+- `ping_or_fail` — dev-only error-surface fixture. Returns `Err(AppError::NotFound)`. Frontend must NOT call this unless `?dev=1` is in the URL. (micro-feature 1.2)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
+
+## Error surface
+
+`AppError` is the single error type for every IPC command. It is
+defined in `src-tauri/src/error.rs` as a `thiserror`-derived enum
+with `#[serde(tag = "kind", content = "data")]` and serializes to:
+
+```json
+{ "kind": "Variant", "data": { ... } }
+```
+
+### Variants (current)
+
+| Variant          | Data                              | Used by                                                  |
+| ---------------- | --------------------------------- | -------------------------------------------------------- |
+| `Internal`       | `{ message: string }`             | Catch-all for unexpected errors. Wraps `Error` toString. |
+| `NotFound`       | `{ what: string }`                | File / vault / note not found.                            |
+| `InvalidArgument`| `{ message: string }`             | Path validation failures (`..`, null bytes, escapes).    |
+| `Io`             | `{ path: string, source: string }`| Wraps `std::io::Error` (the source message is sanitized).|
+
+### Frontend contract
+
+The TS mirror in `src/errors.ts` is a discriminated union of the
+same shape. Three helpers:
+
+- `isAppError(value)` — type guard, narrows `unknown` to `AppError`.
+- `parseAppError(value)` — same but returns `AppError | null`.
+- `appErrorMessage(err)` — human-readable message for the toast.
+
+The typed wrapper in `src/ipc.ts` catches invoke rejections, parses
+them through `isAppError`, and returns `IpcResult<T>`:
+
+```ts
+type IpcResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: AppError; raw: unknown };
+```
+
+The TanStack Query mutation default `onError` (in `src/main.tsx`)
+calls `reportError(message)`, which dispatches a toast. The
+`ping_or_fail` command exercised through `?dev=1` is the manual
+smoke test for this whole path.
 
 ## Database Schema
 
