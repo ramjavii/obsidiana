@@ -19,6 +19,9 @@ pub enum AppError {
         #[serde(rename = "source")]
         message: String,
     },
+
+    #[error("busy: {what}")]
+    Busy { what: String },
 }
 
 impl AppError {
@@ -43,6 +46,10 @@ impl AppError {
             path: path.into(),
             message: err.to_string(),
         }
+    }
+
+    pub fn busy(what: impl Into<String>) -> Self {
+        Self::Busy { what: what.into() }
     }
 }
 
@@ -120,6 +127,22 @@ mod tests {
             }
             other => panic!("expected Io, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn busy_serializes_as_kind_data_shape() {
+        let err = AppError::busy("open_vault");
+        let value = serde_json::to_value(&err).expect("serialize");
+        assert_eq!(
+            value,
+            json!({"kind": "Busy", "data": {"what": "open_vault"}})
+        );
+    }
+
+    #[test]
+    fn busy_display_includes_what() {
+        let err = AppError::busy("git_pull");
+        assert_eq!(err.to_string(), "busy: git_pull");
     }
 }
 

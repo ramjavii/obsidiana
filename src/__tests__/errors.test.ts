@@ -76,6 +76,15 @@ describe("appErrorMessage", () => {
       }),
     ).toBe("Couldn't read /a: EACCES");
   });
+
+  it("formats Busy", () => {
+    expect(
+      appErrorMessage({
+        kind: "Busy",
+        data: { what: "open_vault" },
+      }),
+    ).toBe("Already in progress: open_vault");
+  });
 });
 
 function sampleFor(kind: (typeof APP_ERROR_VARIANTS)[number]): AppError {
@@ -88,5 +97,7 @@ function sampleFor(kind: (typeof APP_ERROR_VARIANTS)[number]): AppError {
       return { kind, data: { message: "m" } };
     case "Io":
       return { kind, data: { path: "/p", source: "s" } };
+    case "Busy":
+      return { kind, data: { what: "w" } };
   }
 }

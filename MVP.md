@@ -27,7 +27,7 @@ accounts.
 
 Core editor & linking:
 
-- [ ] Open a local folder as a vault; persist recent vaults in `settings.json`
+- [x] Open a local folder as a vault; persist recent vaults in `settings.json` (micro-feature 1.3)
 - [ ] File tree navigation (folders + Markdown files)
 - [ ] Open, edit, save Markdown files in a CodeMirror 6 editor (Source mode)
 - [ ] Wikilinks `[[note]]` with shortest-path resolution and broken-link styling

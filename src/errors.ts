@@ -2,13 +2,15 @@ export type AppError =
   | { kind: "Internal"; data: { message: string } }
   | { kind: "NotFound"; data: { what: string } }
   | { kind: "InvalidArgument"; data: { message: string } }
-  | { kind: "Io"; data: { path: string; source: string } };
+  | { kind: "Io"; data: { path: string; source: string } }
+  | { kind: "Busy"; data: { what: string } };
 
 export const APP_ERROR_VARIANTS = [
   "Internal",
   "NotFound",
   "InvalidArgument",
   "Io",
+  "Busy",
 ] as const;
 
 export type AppErrorKind = (typeof APP_ERROR_VARIANTS)[number];
@@ -36,5 +38,7 @@ export function appErrorMessage(err: AppError): string {
       return `Invalid input: ${err.data.message}`;
     case "Io":
       return `Couldn't read ${err.data.path}: ${err.data.source}`;
+    case "Busy":
+      return `Already in progress: ${err.data.what}`;
   }
 }

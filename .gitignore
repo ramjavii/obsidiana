@@ -80,3 +80,4 @@ coverage/
 .parcel-cache/
 .eslintcache
 .rustfmt.toml.bak
+*.tsbuildinfo
