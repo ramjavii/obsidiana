@@ -39,7 +39,7 @@ export function VaultSwitcher({ vault }: Props) {
       {open && (
         <div
           data-testid="vault-switcher-menu"
-          className="absolute right-0 top-full z-40 mt-1 w-72 rounded border border-zinc-700 bg-zinc-900 p-2 text-sm shadow-xl"
+          className="absolute left-0 top-full z-40 mt-1 w-72 rounded border border-zinc-700 bg-zinc-900 p-2 text-sm shadow-xl"
           role="menu"
         >
           <div className="px-2 py-1 text-xs uppercase tracking-wide text-zinc-500">
