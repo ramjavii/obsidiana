@@ -38,23 +38,28 @@ obsidiana/
 │   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher>
 │   ├── components/
 │   │   ├── EmptyState.tsx               # "Open vault…" full-window view (first launch)
+│   │   ├── FileTree.tsx                 # recursive tree: expand dirs, right-click menu, select files
 │   │   ├── ToastHost.tsx                # global error/success/info toasts
 │   │   └── VaultSwitcher.tsx            # header pill: current vault + recents + close
 │   ├── env.d.ts
 │   ├── errors.ts                        # AppError TS discriminated union (5 variants, mirrors Rust)
 │   ├── hooks/
+│   │   ├── useFileTree.ts               # useTreeChildren + create/delete/rename mutations
 │   │   ├── useToastStore.ts             # Zustand store + reportAppError() / reportError()
 │   │   └── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
 │   ├── ipc.ts                           # typed invoke() wrapper → IpcResult<T>
 │   ├── ipc/
+│   │   ├── tree.ts                      # typed wrappers for list_tree / create_note / delete_note / rename_note
 │   │   └── vault.ts                     # typed wrappers for pick/open/close/list_recent
 │   ├── main.tsx                         # React 18 createRoot + QueryClient + ToastHost
 │   ├── styles.css                       # @tailwind base/components/utilities
 │   ├── types/
+│   │   ├── tree.ts                      # TreeNode / TreeNodeKind / NoteContent / RenameReport
 │   │   └── vault.ts                     # VaultInfo / RecentVault / VaultStatus shapes
 │   └── __tests__/
-│       ├── App.test.tsx                 # EmptyState + Shell + dev panel + ?dev=1 trigger
+│       ├── App.test.tsx                 # EmptyState + Shell + sidebar + dev panel + ?dev=1 trigger
 │       ├── EmptyState.test.tsx          # renders, click triggers pick_vault, surfaces error
+│       ├── FileTree.test.tsx            # expand/collapse, select, right-click menu, mutations
 │       ├── ToastHost.test.tsx           # push, dismiss, auto-TTL, stacking
 │       ├── VaultSwitcher.test.tsx       # toggle, recents, close-vault click
 │       ├── errors.test.ts               # isAppError, parseAppError, appErrorMessage (5 variants)
@@ -79,9 +84,14 @@ obsidiana/
 │   │   │   ├── error_demo.rs           # ping_or_fail: dev-only error-surface fixture
 │   │   │   ├── mod.rs
 │   │   │   ├── ping.rs                  # smoke IPC command, returns "pong"
+│   │   │   ├── tree.rs                  # list_tree / create_note / delete_note / rename_note
 │   │   │   └── vault.rs                 # pick_vault / open_vault[/_force] / close_vault / list_recent_vaults
 │   │   ├── error.rs                     # AppError enum (5 variants) + helpers + unit tests
-│   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + handlers
+│   │   ├── fs/
+│   │   │   ├── mod.rs
+│   │   │   ├── note.rs                  # create_note_in / delete_note_in / rename_note_in + NoteContent / RenameReport
+│   │   │   └── tree.rs                  # list_children + TreeNode / TreeNodeKind
+│   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + 10 handlers
 │   │   ├── main.rs                      # windows_subsystem = "windows" in release
 │   │   ├── paths.rs                     # app_data_dir, settings_path, canonicalize_dir, validate_relative_path
 │   │   ├── settings.rs                  # Settings + RecentVaultEntry + Theme, JSON, atomic write
@@ -89,6 +99,7 @@ obsidiana/
 │   ├── tauri.conf.json                  # identifier = "com.obsidiana.app"
 │   └── tests/
 │       ├── ipc_smoke.rs                 # tauri::test::mock_app() + direct-call tests
+│       ├── tree_crud.rs                 # 20 mock_app() tests for all 4 tree commands + AppError paths
 │       └── vault_lifecycle.rs           # 16 mock_app() tests for all 4 vault commands + AppError paths
 ├── tailwind.config.ts
 ├── tsconfig.json                        # strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes
@@ -124,6 +135,9 @@ obsidiana/
 | 2026-06-03 | **Settings file format: JSON.** Lives at `<os-app-data>/com.obsidiana.app/settings.json`. Atomic write via `.tmp` + rename. Schema version 1; unknown or corrupt files are quarantined as `settings.json.broken-<unix-ts>` and replaced with defaults. | JSON is the simplest portable format and matches the spec's mention of `settings.json`. No new dep. Quarantine + defaults per spec §6.2 ("never crash on bad index" / settings). |
 | 2026-06-03 | **Vault root is the one absolute path the frontend may see.** All other paths returned by IPC are relative to the active vault and pass through `paths::validate_relative_path` (rejects `..`, null bytes, backslashes, absolute paths). | Spec §7.1 bans absolute paths from the frontend except for the picked vault root (needed for `list_recent_vaults` to be re-opened later). The exception is documented and the rule is enforced by lint-style comment in `commands/vault.rs`. |
 | 2026-06-03 | **`open_vault` refuses to switch active vaults without `force: true`.** Emits `AppError::Busy`. The frontend uses `open_vault` (non-force) by default and `open_vault_force` only from the recents dropdown where the user explicitly chose to switch. | Prevents accidental vault loss from a stray double-click on Pick. Matches the spirit of spec §6.3 ("never destructive"). |
+| 2026-06-03 | **1.4 scope split: `list_tree` + `create_note` + `delete_note` + `rename_note` ship in micro-feature 1.4; `read_note` and `write_note` are deferred to 1.5 with CodeMirror.** | Bundling `read_note`/`write_note` without an editor means a placeholder textarea that gets thrown away in 1.5. The tree CRUD is self-contained and testable on its own. |
+| 2026-06-03 | **File tree filter: hide dotfiles + dot-dirs (`.obsidian/`, `.trash/`, `.git/`, etc.); for files, show only `.md` and `.markdown` (case-insensitive).** | Matches Obsidian convention. `.obsidian/` is where Obsidian stores its config — we don't want to compete. Other extensions (images, PDFs) are stage 2 territory (embeds). |
+| 2026-06-03 | **Lazy-load subtrees via per-directory `list_tree(path)` calls.** Frontend maintains an `expanded: Set<path>` and the `useTreeChildren(path)` hook fires one query per expanded dir, cached by path. | Spec §5.1: "virtualized for thousands of files, lazy load subtrees". One query per expand keeps payload small and matches the `<details>`-style UX. Cache (5s staleTime) absorbs back-and-forth toggling. |
 
 ## Toolchain
 
@@ -148,6 +162,10 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `open_vault_force(path)` — same as `open_vault` but switches active vault even if one is already open. Called only from the recents dropdown. (micro-feature 1.3)
 - `close_vault` — clears the active vault; idempotent (no-op if none open). Persists `last_vault = None`. (micro-feature 1.3)
 - `list_recent_vaults` — reconciles (marks missing entries `available: false`) and returns the recents list. Persists after reconcile. (micro-feature 1.3)
+- `list_tree(path)` — returns the immediate children of `path` (or root when `None`), filtered to dirs + `.md`/`.markdown` files and sorted dirs-first then alpha. `path` is validated via `validate_relative_path`. (micro-feature 1.4)
+- `create_note(path, template)` — creates a new `.md`/`.markdown` file at `path` (relative, validated) with `template` as content (empty if `None`). Returns the new `NoteContent` (`{path, content, modified_at}`). Rejects collisions, non-`.md` extensions, and missing parents. (micro-feature 1.4)
+- `delete_note(path)` — removes the file at `path`. Refuses to delete directories. (micro-feature 1.4)
+- `rename_note(from, to)` — moves/renames a note within the vault. Both paths validated. Refuses collisions and missing source. (micro-feature 1.4)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 
@@ -267,6 +285,84 @@ IPC is relative to the active vault and goes through
 `validate_relative_path`. The exception is enforced by a
 `// SAFETY: vault root is the one absolute path...` comment on
 `vault_info_from` so a future grep finds it.
+
+## File tree (micro-feature 1.4)
+
+Stage 1 of MVP now has its second user-visible feature: once a
+vault is open, the sidebar shows a tree of folders and Markdown
+files. Click a folder to expand/collapse, click a file to select
+it, right-click for New / Rename / Delete. Selecting a file
+highlights it in the tree and shows a placeholder pane on the
+right ("Editor lands in 1.5").
+
+### Backend layout
+
+- `src-tauri/src/fs/tree.rs` — `list_children(vault_root, relative)`
+  pure function (no AppState). Filters dotfiles, restricts files
+  to `.md`/`.markdown` (case-insensitive), sorts dirs-first then
+  alpha. Returns `Vec<TreeNode>` with `name`, relative `path`,
+  `kind` (`"file"` | `"dir"`), and `extension`.
+- `src-tauri/src/fs/note.rs` — `create_note_in`, `delete_note_in`,
+  `rename_note_in` pure functions. `create_note_in` rejects
+  collisions, non-`.md` extensions, and missing parents.
+  `delete_note_in` refuses to delete directories. `rename_note_in`
+  refuses collisions and missing source; allows cross-folder moves
+  when the destination parent exists.
+- `src-tauri/src/commands/tree.rs` — IPC wrappers plus `*_inner`
+  helpers. Each `*_inner` calls `require_vault_root` (returns
+  `InvalidArgument("no vault is open")` if `AppState.vault` is
+  `None`), then `validate_relative_path`, then dispatches to the
+  pure function in `fs::`. This is the same pattern the vault
+  commands established in 1.3.
+- `src-tauri/tests/tree_crud.rs` — 20 `tauri::test::mock_app()`
+  tests. Each command has success + error-path coverage:
+  `list_tree` root, subfolder, hidden files filtered, missing
+  folder (`NotFound`), `..` path (`InvalidArgument`), absolute
+  path (`InvalidArgument`), no-vault-open (`InvalidArgument`);
+  `create_note` write, empty template, collision, `..` path, null
+  byte; `delete_note` remove, missing (`NotFound`), `..` path;
+  `rename_note` in-place, cross-folder, collision, missing source,
+  `..` destination.
+
+### Frontend layout
+
+- `src/types/tree.ts` — `TreeNode`, `TreeNodeKind`, `NoteContent`,
+  `RenameReport`. Mirrors the Rust serde shapes (camelCase where
+  Rust uses snake_case for `modifiedAt`).
+- `src/ipc/tree.ts` — typed wrappers that throw on `AppError`
+  rejection, so the hook layer can use the `useTreeMutation`
+  helper uniformly with the vault mutations.
+- `src/hooks/useFileTree.ts` — `useTreeChildren(path, {enabled})`
+  query keyed by `["tree","children",path]`. Three mutations
+  (`useCreateNoteMutation`, `useDeleteNoteMutation`,
+  `useRenameNoteMutation`) that invalidate the **parent**
+  directory's children on success. `parentOf` is the only place
+  the "what is a note's parent dir" logic lives.
+- `src/components/FileTree.tsx` — main `<FileTree>` (toolbar
+  with `+ New`, list of root children, fixed-position context
+  menu) plus a recursive `<FileTreeNode>` that calls
+  `useTreeChildren` only when its dir is expanded. Right-click
+  menu items are: `New note here` (dirs only), `Rename`, `Delete`.
+  `New` and `Rename` use `window.prompt`; `Delete` uses
+  `window.confirm`. The selected file path is lifted to `App.tsx`
+  for the placeholder pane.
+- `src/App.tsx` — `<Shell>` now has a 288px sidebar
+  (`<FileTree>`) and a flexible main pane. The placeholder pane
+  shows the selected file's relative path and the "Editor lands
+  in 1.5" notice. The `?dev=1` panel is unchanged.
+
+### What's NOT in 1.4 (deferred to 1.5)
+
+- `read_note` / `write_note` IPC commands — they only make sense
+  with the CodeMirror editor.
+- Folder creation via UI — `create_note` can write into an
+  existing folder, but there's no `create_folder` IPC. Users can
+  create folders out-of-band for now.
+- Drag-and-drop to move notes — `rename_note` already supports
+  cross-folder moves; D&D is a polish layer.
+- The notify watcher (stage 3) — the design supports it
+  (mutations already invalidate the right cache keys), but
+  external edits don't auto-refresh the tree yet.
 
 ## Database Schema
 

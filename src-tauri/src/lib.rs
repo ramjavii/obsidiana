@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod error;
+pub mod fs;
 pub mod paths;
 pub mod settings;
 pub mod state;
@@ -20,6 +21,10 @@ pub fn run() {
             commands::vault::open_vault_force,
             commands::vault::close_vault,
             commands::vault::list_recent_vaults,
+            commands::tree::list_tree,
+            commands::tree::create_note,
+            commands::tree::delete_note,
+            commands::tree::rename_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

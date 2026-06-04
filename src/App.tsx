@@ -5,7 +5,9 @@ import { reportAppError } from "@/hooks/useToastStore";
 import { appErrorMessage } from "@/errors";
 import { EmptyState } from "@/components/EmptyState";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
+import { FileTree } from "@/components/FileTree";
 import { useVaultStatus } from "@/hooks/useVault";
+import type { VaultInfo } from "@/types/vault";
 
 async function ping(): Promise<string> {
   const result = await ipcInvoke<string>("ping");
@@ -60,9 +62,54 @@ function DevPanel() {
   );
 }
 
+function SelectedFilePlaceholder({
+  vault,
+  selectedPath,
+  onClear,
+}: {
+  vault: VaultInfo;
+  selectedPath: string;
+  onClear: () => void;
+}) {
+  return (
+    <div
+      data-testid="selected-file"
+      className="flex h-full flex-col bg-zinc-950"
+    >
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-2">
+        <span className="text-sm font-medium text-zinc-200">{selectedPath}</span>
+        <button
+          type="button"
+          data-testid="close-selection"
+          onClick={onClear}
+          className="ml-auto rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800"
+        >
+          ×
+        </button>
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-zinc-500">
+        <p className="text-sm">Note selected.</p>
+        <p className="text-xs text-zinc-600">
+          Editor lands in micro-feature 1.5.
+        </p>
+        <p className="mt-4 text-[10px] uppercase tracking-wider text-zinc-700">
+          {vault.name}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function Shell() {
   const { status } = useVaultStatus();
+  const [selectedPath, setSelectedPath] = useState<string>("");
+
   if (status.kind !== "open") return <EmptyState />;
+
+  function handleSelect(path: string) {
+    setSelectedPath(path);
+  }
+
   return (
     <div className="flex h-screen w-screen flex-col bg-zinc-950 text-zinc-100">
       <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
@@ -70,13 +117,32 @@ function Shell() {
         <VaultSwitcher vault={status.vault} />
         {isDevMode() && <DevPanel />}
       </header>
-      <main className="flex flex-1 items-center justify-center text-zinc-500">
-        <div className="text-center">
-          <p className="text-sm">Vault is open.</p>
-          <p className="mt-2 text-xs text-zinc-600">
-            File tree and editor land in micro-feature 1.4 / 1.5.
-          </p>
-        </div>
+      <main className="flex flex-1 overflow-hidden">
+        <aside
+          data-testid="sidebar"
+          className="w-72 shrink-0 border-r border-zinc-800"
+        >
+          <FileTree
+            selectedPath={selectedPath || null}
+            onSelect={handleSelect}
+          />
+        </aside>
+        <section className="flex-1 overflow-hidden">
+          {selectedPath ? (
+            <SelectedFilePlaceholder
+              vault={status.vault}
+              selectedPath={selectedPath}
+              onClear={() => setSelectedPath("")}
+            />
+          ) : (
+            <div
+              data-testid="empty-main"
+              className="flex h-full items-center justify-center text-zinc-500"
+            >
+              <p className="text-sm">Select a file from the tree.</p>
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );
