@@ -16,7 +16,7 @@ accounts.
 - React + TypeScript + Vite (frontend)
 - CodeMirror 6 (editor — basic Source view; Live Preview / Preview planned in micro-features 2.5–2.7)
 - Tailwind CSS (styling)
-- Markdown engine: TBD — choose Rust `markdown-rs` (richer CommonMark, single-process) vs JS `remark-parse` + `unified` in a Web Worker (more plugins, more JS bundle). Pick in micro-feature 2.5 with an ADR.
+- Markdown engine: Rust `markdown-rs` (CommonMark + GFM) running in `src-tauri/src/markdown/`. See ADR-001 in `docs/architecture.md`.
 - SQLite via `rusqlite` (link / tag / metadata index; no `sqlite-vec` for now)
 - `notify` crate (debounced filesystem watcher)
 - `react-force-graph` (graph visualization)
@@ -36,7 +36,7 @@ Core editor & linking:
   - [x] 2.3: CodeMirror syntax highlighting for `[[note]]`
   - [x] 2.4: click-to-jump on resolved wikilinks; broken-link styling + "Create note" affordance
 - [ ] Live Preview / Obsidian-like WYSIWYG editor
-  - [ ] 2.5: pick markdown engine (Rust `markdown-rs` vs JS `remark-parse` in a Web Worker); ADR in `docs/architecture.md`
+  - [x] 2.5: pick markdown engine (ADR-001: Rust `markdown-rs`); ADR in `docs/architecture.md`
   - [ ] 2.6: inline render pipeline — bold, italic, headings, inline code, fenced code, links, and resolved wikilinks render visually while the cursor stays in source positions
   - [ ] 2.7: mode toggle in the editor chrome (Source / Live Preview / Reading view)
 - [ ] Tags `#parent/child` extracted and listed per note

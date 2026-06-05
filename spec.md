@@ -5,6 +5,7 @@
 
 ## Change Log
 
+- 2026-06-05 — ADR-001: Markdown engine pinned to Rust `markdown-rs` (resolves the open question in §2.1).
 - 2026-06-02 — Initial draft (Block 2 of project-kickoff). Refined for edge cases, race conditions, and security.
 
 ## 1. Product Layer
@@ -39,7 +40,7 @@
 - **Frontend:** React 18 + TypeScript + Vite. Tailwind CSS for styling. No external UI kits.
 - **Editor:** CodeMirror 6 with the basic Setup, Markdown language, and a wikilink syntax extension.
 - **Backend:** Rust. All filesystem, indexing, and Git operations go through Rust commands invoked via Tauri IPC.
-- **Markdown engine:** `remark-parse` (Rust crate `markdown-rs` is fine; final pick happens in `AGENTS.md`). Preprocessor runs in Rust on a worker thread.
+- **Markdown engine:** Rust `markdown-rs` (CommonMark + GFM). Decision recorded as ADR-001 in `docs/architecture.md`. Preprocessor and renderer both run in Rust on `tokio::task::spawn_blocking` worker threads.
 - **Database:** SQLite via `rusqlite`, bundled, FTS5 disabled in MVP. Single file at `<vault>/.obsidiana/index.db` (gitignored, regenerable).
 - **Filesystem watcher:** `notify` crate, debounced 200 ms.
 - **Graph rendering:** `react-force-graph` with Canvas/WebGL backend.

@@ -19,8 +19,11 @@ These are hard rules. Do not propose alternatives without a written ADR in
 - **Editor:** CodeMirror 6. No Monaco, no Slate, no Lexical.
 - **Database:** SQLite via `rusqlite`. Single bundled DB. No `sqlite-vec` in
   MVP. No Postgres, no DuckDB, no RxDB.
-- **Markdown engine:** `remark-parse` (via the Rust `markdown` crate or a JS
-  pipeline that runs in a Web Worker — pick one and document it).
+- **Markdown engine:** Rust `markdown-rs` (CommonMark + GFM). All parsing,
+  rendering, and sanitization happens in `src-tauri/src/markdown/`. The
+  frontend never parses Markdown directly. The render contract is the
+  `render_markdown(path) → RenderedNote { html, sourceMap }` IPC. ADR-001
+  in `docs/architecture.md` is the source of truth for this rule.
 - **Filesystem watcher:** `notify` crate, 200 ms debounce, ignore self-writes.
 - **Graph rendering:** `react-force-graph` with Canvas backend.
 - **Git:** invoke the `git` CLI as a child process with an args array, never

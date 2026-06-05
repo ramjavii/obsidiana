@@ -778,8 +778,86 @@ Limitations (deliberate, MVP-scope):
   user must close and reopen the source note for the
   `resolve_wikilink` cache to refresh. This is acceptable for MVP
   and will be revisited when stage 3's connection cache lands.
-- `window.confirm` matches the FileTree delete-confirm UX for now;
+  - `window.confirm` matches the FileTree delete-confirm UX for now;
   a proper modal is a 2.4.1 polish item.
+
+## ADR-001: Markdown engine for Live Preview and Reading view
+
+- **Status:** Accepted, 2026-06-05.
+- **Context.** Micro-features 2.6 (inline render pipeline) and 2.7
+  (3-mode editor: Source / Live Preview / Reading view) need a
+  Markdown → HTML + source-position mapping. Two candidate stacks
+  are on the table:
+  - **Rust `markdown-rs`** (the maintained `pulldown-cmark`-derived
+    crate, CommonMark + GFM). Runs in the existing Rust process on
+    a `tokio::task::spawn_blocking` worker. No JS bundle bloat. One
+    IPC command (`render_markdown`) returns sanitized HTML + a
+    positional token map that maps 1-to-1 to source positions.
+  - **JS `remark-parse` + `unified` in a Web Worker.** Runs in the
+    WebView, off-main-thread by construction. Adds
+    `unified` + `remark-parse` + `remark-gfm` + `mdast-util-to-hast`
+    + `rehype-sanitize` (≈ 150–200 KB gz) to the bundle. No IPC
+    round-trip for rendering. Easy to extend with `remark` /
+    `rehype` plugins.
+- **Decision drivers.**
+  1. The Rust backend already owns every Markdown concern in this
+     project — wikilink extraction (2.1), wikilink resolution
+     (2.2), and the future tag / callout / embed / block-ref
+     preprocessor all live in `src-tauri/src/markdown/`. A second
+     Markdown parser in JS duplicates grammar knowledge and forces
+     a second preprocessor for wikilinks / tags / callouts.
+  2. The spec calls out a 1 MB worst-case file (spec §6.4). On a
+     50 KB note, a render round-trip through the Tauri IPC
+     loopback is sub-millisecond; the worst-case IPC payload is
+     bounded by the spec.
+  3. `spec.md` §2.1 already references "Rust crate `markdown-rs`"
+     as an acceptable choice; the existing Rust markdown module is
+     the natural home.
+  4. Tauri 2 Web Workers are a second moving part: Vite worker
+     bundling, a `postMessage` protocol, structured-clone
+     serialization of `mdast` ASTs on every keystroke, and a
+     parallel `AppError`-shaped error envelope to maintain on the
+     worker boundary. The 1 MB worst-case is small enough that
+     this overhead is hard to justify.
+  5. Spec §7.4 says sanitization happens on the rendered HTML
+     output and explicitly bans `<script>`, `on*` attributes, and
+     `javascript:` URLs. Keeping sanitization on the Rust side
+     means the surface area for accidental HTML injection is one
+     crate, not a pipeline split across an IPC hop.
+- **Decision.** **Rust `markdown-rs`** is the engine for
+  Live Preview (2.6) and Reading view (2.7). All Markdown parsing,
+  rendering, and sanitization happens in `src-tauri/src/markdown/`.
+  The frontend never parses Markdown directly. The IPC contract
+  (forward-compat for 2.6) is `render_markdown(path) → RenderedNote
+  { html, sourceMap }` where `sourceMap` lets the editor position
+  decorations on the source view.
+- **Consequences.**
+  - **Positive.** Single source of truth for Markdown grammar.
+    Sanitization stays in Rust per spec §7.4. No Vite worker
+    plumbing. No ~150–200 KB gz of `unified` + `remark` / `rehype`
+    in the JS bundle. The Rust error contract (`AppError` with
+    `#[serde(tag = "kind", content = "data")]`) carries the
+    renderer's failures into the toast pipeline unchanged.
+  - **Negative.** The Rust Markdown ecosystem is smaller than the
+    JS one. Future plugins (e.g. a `rehype-mermaid`-style
+    extension) are Rust ports, not `pnpm add`. `markdown-rs` is
+    the maintained `pulldown-cmark` fork; some readers will only
+    know the upstream crate and may misread the ADR.
+  - **Reversibility: moderate.** The IPC shape (`render_markdown`)
+    is the contract. To switch engines later, rewrite
+    `src-tauri/src/markdown/` (Rust → JS pipeline behind a Worker,
+    or a different Rust crate) and keep the same IPC. The
+    frontend and the wikilink preprocessor do not need to change.
+- **Alternatives considered.**
+  - **`pulldown-cmark` upstream** — equivalent functionality;
+    `markdown-rs` is its maintained fork. We take the fork per the
+    spec's hint.
+  - **`comrak`** — full GFM, larger dependency tree, no advantage
+    over `markdown-rs` for our needs.
+  - **`markdown-it` (Rust port)** — older, smaller plugin
+    ecosystem, no reason to pick it.
+  - **JS `remark-parse` + `unified` in a Web Worker** — rejected;
+    see Decision drivers (1), (4), (5).
 
 ## Database Schema
 
@@ -790,8 +868,8 @@ Schema migrations land with stage 3.
 
 ## Open Questions / Backlog
 
-- Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a
-  Web Worker. Decide in micro-feature 2.5 (Live Preview / WYSIWYG editor).
+- ~~Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a
+  Web Worker. Decide in micro-feature 2.5 (Live Preview / WYSIWYG editor).~~ Resolved 2026-06-05 — ADR-001: Rust `markdown-rs`. See the ADR section above.
   No longer a "sometime in stage 2" question; it's the first thing 2.5 blocks on.
 - Decide on `react-force-graph` 2D vs 3D mode at implementation time.
 - Embedded opencode terminal panel: implementation surface is a
