@@ -16,6 +16,12 @@ pub struct RenameReport {
     pub to: String,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WriteResult {
+    pub path: String,
+    pub modified_at: String,
+}
+
 fn has_note_extension(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.ends_with(".md") || lower.ends_with(".markdown")
@@ -143,6 +149,79 @@ pub fn rename_note_in(
     Ok(RenameReport {
         from: from.to_string_lossy().into_owned(),
         to: to.to_string_lossy().into_owned(),
+    })
+}
+
+pub fn read_note_in(vault_root: &Path, relative: &Path) -> AppResult<NoteContent> {
+    let absolute = vault_root.join(relative);
+    let meta = std::fs::metadata(&absolute).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            AppError::not_found(format!("note: {}", relative.display()))
+        } else {
+            AppError::from_io(absolute.display().to_string(), &e)
+        }
+    })?;
+    if !meta.is_file() {
+        return Err(AppError::invalid(format!(
+            "not a regular file: {}",
+            relative.display()
+        )));
+    }
+    let bytes = std::fs::read(&absolute)
+        .map_err(|e| AppError::from_io(absolute.display().to_string(), &e))?;
+    let content = String::from_utf8(bytes).map_err(|_| {
+        AppError::invalid(format!(
+            "note is not valid UTF-8: {}",
+            relative.display()
+        ))
+    })?;
+    let modified_at: DateTime<Utc> = meta
+        .modified()
+        .map(DateTime::from)
+        .unwrap_or_else(|_| Utc::now());
+    Ok(NoteContent {
+        path: relative.to_string_lossy().into_owned(),
+        content,
+        modified_at: modified_at.to_rfc3339(),
+    })
+}
+
+pub fn write_note_in(
+    vault_root: &Path,
+    relative: &Path,
+    content: &str,
+) -> AppResult<WriteResult> {
+    let file_name = relative
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| AppError::invalid("path has no file name"))?;
+    if !has_note_extension(file_name) {
+        return Err(AppError::invalid(format!(
+            "note must have .md or .markdown extension: {file_name}"
+        )));
+    }
+    let absolute = vault_root.join(relative);
+    ensure_parent_exists(vault_root, &absolute)?;
+    if absolute.exists() {
+        let meta = std::fs::metadata(&absolute)
+            .map_err(|e| AppError::from_io(absolute.display().to_string(), &e))?;
+        if !meta.is_file() {
+            return Err(AppError::invalid(format!(
+                "not a regular file: {}",
+                relative.display()
+            )));
+        }
+    }
+    std::fs::write(&absolute, content.as_bytes())
+        .map_err(|e| AppError::from_io(absolute.display().to_string(), &e))?;
+    let modified_at: DateTime<Utc> = absolute
+        .metadata()
+        .and_then(|m| m.modified())
+        .map(DateTime::from)
+        .unwrap_or_else(|_| Utc::now());
+    Ok(WriteResult {
+        path: relative.to_string_lossy().into_owned(),
+        modified_at: modified_at.to_rfc3339(),
     })
 }
 
@@ -344,5 +423,121 @@ mod tests {
         assert!(has_note_extension("README.Markdown"));
         assert!(!has_note_extension("a.txt"));
         assert!(!has_note_extension("a"));
+    }
+
+    #[test]
+    fn read_returns_content_and_modified_at() {
+        let (_tmp, root) = vault();
+        std::fs::write(root.join("hello.md"), "# hi\n").expect("seed");
+        let note = read_note_in(&root, Path::new("hello.md")).expect("ok");
+        assert_eq!(note.path, "hello.md");
+        assert_eq!(note.content, "# hi\n");
+        assert!(!note.modified_at.is_empty());
+    }
+
+    #[test]
+    fn read_missing_returns_not_found() {
+        let (_tmp, root) = vault();
+        match read_note_in(&root, Path::new("ghost.md")) {
+            Err(AppError::NotFound { .. }) => {}
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_rejects_directory() {
+        let (_tmp, root) = vault();
+        std::fs::create_dir(root.join("a-folder")).expect("mkdir");
+        match read_note_in(&root, Path::new("a-folder")) {
+            Err(AppError::InvalidArgument { .. }) => {}
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn read_rejects_non_utf8() {
+        let (_tmp, root) = vault();
+        std::fs::write(root.join("bin.md"), [0xFF, 0xFE, 0x00, 0x01]).expect("seed");
+        match read_note_in(&root, Path::new("bin.md")) {
+            Err(AppError::InvalidArgument { .. }) => {}
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn write_creates_new_file() {
+        let (_tmp, root) = vault();
+        let result = write_note_in(&root, Path::new("new.md"), "fresh").expect("ok");
+        assert_eq!(result.path, "new.md");
+        assert!(!result.modified_at.is_empty());
+        let on_disk = std::fs::read_to_string(root.join("new.md")).expect("read");
+        assert_eq!(on_disk, "fresh");
+    }
+
+    #[test]
+    fn write_overwrites_existing() {
+        let (_tmp, root) = vault();
+        std::fs::write(root.join("edit.md"), b"old").expect("seed");
+        let result = write_note_in(&root, Path::new("edit.md"), "new").expect("ok");
+        assert_eq!(result.path, "edit.md");
+        let on_disk = std::fs::read_to_string(root.join("edit.md")).expect("read");
+        assert_eq!(on_disk, "new");
+    }
+
+    #[test]
+    fn write_empty_content() {
+        let (_tmp, root) = vault();
+        let result = write_note_in(&root, Path::new("blank.md"), "").expect("ok");
+        assert_eq!(result.path, "blank.md");
+        let on_disk = std::fs::read_to_string(root.join("blank.md")).expect("read");
+        assert_eq!(on_disk, "");
+    }
+
+    #[test]
+    fn write_rejects_missing_parent() {
+        let (_tmp, root) = vault();
+        match write_note_in(&root, Path::new("nope/new.md"), "x") {
+            Err(AppError::NotFound { .. }) => {}
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+        assert!(!root.join("nope").exists());
+    }
+
+    #[test]
+    fn write_rejects_directory_target() {
+        let (_tmp, root) = vault();
+        std::fs::create_dir(root.join("a-folder.md")).expect("mkdir");
+        match write_note_in(&root, Path::new("a-folder.md"), "x") {
+            Err(AppError::InvalidArgument { .. }) => {}
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn write_rejects_non_note_extension() {
+        let (_tmp, root) = vault();
+        match write_note_in(&root, Path::new("bad.txt"), "x") {
+            Err(AppError::InvalidArgument { .. }) => {}
+            other => panic!("expected InvalidArgument, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn write_updates_modified_at_when_overwriting() {
+        let (_tmp, root) = vault();
+        let original = std::fs::metadata(root.join("a.md"))
+            .ok()
+            .and_then(|m| m.modified().ok());
+        std::fs::write(root.join("a.md"), b"v1").expect("seed");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let result = write_note_in(&root, Path::new("a.md"), "v2").expect("ok");
+        let new_mtime = std::fs::metadata(root.join("a.md"))
+            .expect("meta")
+            .modified()
+            .expect("mtime");
+        if let Some(orig) = original {
+            assert!(new_mtime >= orig, "mtime did not advance");
+        }
+        assert!(!result.modified_at.is_empty());
     }
 }

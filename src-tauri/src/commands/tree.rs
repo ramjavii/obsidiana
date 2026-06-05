@@ -1,5 +1,8 @@
 use crate::error::{AppError, AppResult};
-use crate::fs::note::{create_note_in, delete_note_in, rename_note_in, NoteContent, RenameReport};
+use crate::fs::note::{
+    create_note_in, delete_note_in, read_note_in, rename_note_in, write_note_in, NoteContent,
+    RenameReport, WriteResult,
+};
 use crate::fs::tree::{list_children, TreeNode};
 use crate::paths::validate_relative_path;
 use crate::state::AppState;
@@ -89,4 +92,37 @@ pub async fn rename_note(
     state: State<'_, AppState>,
 ) -> AppResult<RenameReport> {
     rename_note_inner(state, from, to)
+}
+
+pub fn read_note_inner(state: State<'_, AppState>, path: String) -> AppResult<NoteContent> {
+    let vault_root = require_vault_root(&state)?;
+    let relative = validate_relative_path(&path)?;
+    read_note_in(&vault_root, &relative)
+}
+
+#[tauri::command]
+pub async fn read_note(
+    path: String,
+    state: State<'_, AppState>,
+) -> AppResult<NoteContent> {
+    read_note_inner(state, path)
+}
+
+pub fn write_note_inner(
+    state: State<'_, AppState>,
+    path: String,
+    content: String,
+) -> AppResult<WriteResult> {
+    let vault_root = require_vault_root(&state)?;
+    let relative = validate_relative_path(&path)?;
+    write_note_in(&vault_root, &relative, &content)
+}
+
+#[tauri::command]
+pub async fn write_note(
+    path: String,
+    content: String,
+    state: State<'_, AppState>,
+) -> AppResult<WriteResult> {
+    write_note_inner(state, path, content)
 }

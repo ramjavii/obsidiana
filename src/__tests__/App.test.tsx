@@ -84,4 +84,48 @@ describe("App", () => {
     });
     window.history.replaceState({}, "", "/");
   });
+
+  it("renders the Editor when a file is selected and the close button clears it", async () => {
+    window.history.replaceState({}, "", "/?dev=1");
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "list_recent_vaults") {
+        return Promise.resolve([
+          {
+            name: "notes",
+            path: "/tmp/notes",
+            lastOpened: "2024-01-01T00:00:00Z",
+            available: true,
+          },
+        ]);
+      }
+      if (cmd === "open_vault") return Promise.resolve({ name: "notes", path: "/tmp/notes" });
+      if (cmd === "list_tree") {
+        return Promise.resolve([
+          { kind: "file", path: "hello.md", name: "hello.md" },
+        ]);
+      }
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "# hi",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      if (cmd === "ping") return Promise.resolve("pong");
+      return Promise.resolve(null);
+    });
+    renderWithProviders(<App />);
+    const treeItem = await screen.findByText("hello.md");
+    const user = userEvent.setup();
+    await user.click(treeItem);
+    await waitFor(() => {
+      expect(screen.getByTestId("editor")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("editor-close")).toBeInTheDocument();
+    await user.click(screen.getByTestId("editor-close"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("editor")).not.toBeInTheDocument();
+    });
+    window.history.replaceState({}, "", "/");
+  });
 });

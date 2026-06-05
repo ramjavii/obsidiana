@@ -29,7 +29,7 @@ Core editor & linking:
 
 - [x] Open a local folder as a vault; persist recent vaults in `settings.json` (micro-feature 1.3)
 - [x] File tree navigation (folders + Markdown files) (micro-feature 1.4)
-- [ ] Open, edit, save Markdown files in a CodeMirror 6 editor (Source mode)
+- [x] Open, edit, save Markdown files in a CodeMirror 6 editor (Source mode) (micro-feature 1.5)
 - [ ] Wikilinks `[[note]]` with shortest-path resolution and broken-link styling
 - [ ] Tags `#parent/child` extracted and listed per note
 - [ ] Backlinks panel showing incoming links to the active note

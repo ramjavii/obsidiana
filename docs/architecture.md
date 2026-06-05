@@ -37,6 +37,7 @@ obsidiana/
 ├── src/                                 # frontend (React 18 + TS strict + Tailwind)
 │   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher>
 │   ├── components/
+│   │   ├── Editor.tsx                   # CodeMirror 6 wrapper: autosave 500ms, Ctrl/Cmd+S, status chip, close (1.5)
 │   │   ├── EmptyState.tsx               # "Open vault…" full-window view (first launch)
 │   │   ├── FileTree.tsx                 # recursive tree: expand dirs, right-click menu, select files
 │   │   ├── ToastHost.tsx                # global error/success/info toasts
@@ -45,27 +46,32 @@ obsidiana/
 │   ├── errors.ts                        # AppError TS discriminated union (5 variants, mirrors Rust)
 │   ├── hooks/
 │   │   ├── useFileTree.ts               # useTreeChildren + create/delete/rename mutations
+│   │   ├── useNote.ts                   # useReadNote + useWriteNoteMutation (optimistic, rollback, tree invalidation) (1.5)
 │   │   ├── useToastStore.ts             # Zustand store + reportAppError() / reportError()
 │   │   └── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
 │   ├── ipc.ts                           # typed invoke() wrapper → IpcResult<T>
 │   ├── ipc/
+│   │   ├── note.ts                      # typed wrappers for read_note / write_note (1.5)
 │   │   ├── tree.ts                      # typed wrappers for list_tree / create_note / delete_note / rename_note
 │   │   └── vault.ts                     # typed wrappers for pick/open/close/list_recent
 │   ├── main.tsx                         # React 18 createRoot + QueryClient + ToastHost
 │   ├── styles.css                       # @tailwind base/components/utilities
 │   ├── types/
+│   │   ├── note.ts                      # WriteResult (1.5)
 │   │   ├── tree.ts                      # TreeNode / TreeNodeKind / NoteContent / RenameReport
 │   │   └── vault.ts                     # VaultInfo / RecentVault / VaultStatus shapes
 │   └── __tests__/
-│       ├── App.test.tsx                 # EmptyState + Shell + sidebar + dev panel + ?dev=1 trigger
+│       ├── App.test.tsx                 # EmptyState + Shell + sidebar + dev panel + ?dev=1 trigger + editor integration
+│       ├── Editor.test.tsx              # render, autosave gate, error chip + toast, close, path-change destroys view (1.5)
 │       ├── EmptyState.test.tsx          # renders, click triggers pick_vault, surfaces error
 │       ├── FileTree.test.tsx            # expand/collapse, select, right-click menu, mutations
 │       ├── ToastHost.test.tsx           # push, dismiss, auto-TTL, stacking
 │       ├── VaultSwitcher.test.tsx       # toggle, recents, close-vault click
 │       ├── errors.test.ts               # isAppError, parseAppError, appErrorMessage (5 variants)
 │       ├── ipc.test.ts                  # ok / AppError rejection / wrapped Internal
+│       ├── useNote.test.tsx             # read cmd match, enabled skip, optimistic update, rollback on AppError (1.5)
 │       ├── useVault.test.tsx            # auto-open last vault, mutations reflect in status
-│       └── setup.tsx                    # mocks @tauri-apps/api/core + renderWithProviders()
+│       └── setup.tsx                    # mocks @tauri-apps/api/core + codemirror modules + renderWithProviders()
 ├── src-tauri/                           # backend (Rust 2021, Tauri 2)
 │   ├── .gitignore                       # gen/, target/, WixTools/
 │   ├── Cargo.toml                       # + tauri-plugin-dialog, dirs, chrono, tempfile
@@ -138,6 +144,8 @@ obsidiana/
 | 2026-06-03 | **1.4 scope split: `list_tree` + `create_note` + `delete_note` + `rename_note` ship in micro-feature 1.4; `read_note` and `write_note` are deferred to 1.5 with CodeMirror.** | Bundling `read_note`/`write_note` without an editor means a placeholder textarea that gets thrown away in 1.5. The tree CRUD is self-contained and testable on its own. |
 | 2026-06-03 | **File tree filter: hide dotfiles + dot-dirs (`.obsidian/`, `.trash/`, `.git/`, etc.); for files, show only `.md` and `.markdown` (case-insensitive).** | Matches Obsidian convention. `.obsidian/` is where Obsidian stores its config — we don't want to compete. Other extensions (images, PDFs) are stage 2 territory (embeds). |
 | 2026-06-03 | **Lazy-load subtrees via per-directory `list_tree(path)` calls.** Frontend maintains an `expanded: Set<path>` and the `useTreeChildren(path)` hook fires one query per expanded dir, cached by path. | Spec §5.1: "virtualized for thousands of files, lazy load subtrees". One query per expand keeps payload small and matches the `<details>`-style UX. Cache (5s staleTime) absorbs back-and-forth toggling. |
+| 2026-06-04 | **1.5 scope split: single editor (no tabs), Source mode only, no wikilink jump-to, no Live Preview, no custom key bindings beyond Ctrl/Cmd+S, no file-changed-on-disk detection.** Tabs land in 1.5.1+; Live Preview in stage 2 alongside the markdown engine decision. | Bundling all of that into 1.5 would balloon the diff past the 1.5 loop budget. Source mode + autosave + error surface is the minimum that lets us dogfood editing. |
+| 2026-06-04 | **Autosave on close is silent and best-effort.** No "you have unsaved changes" prompt, no discard option in 1.5. The close button awaits the in-flight write, then calls `onClose`. | Spec §5.1 says "never destructive" but the simplest non-destructive path is to save. A modal prompt is a UX decision that can wait for a polish pass after we have real users. |
 
 ## Toolchain
 
@@ -166,6 +174,8 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `create_note(path, template)` — creates a new `.md`/`.markdown` file at `path` (relative, validated) with `template` as content (empty if `None`). Returns the new `NoteContent` (`{path, content, modified_at}`). Rejects collisions, non-`.md` extensions, and missing parents. (micro-feature 1.4)
 - `delete_note(path)` — removes the file at `path`. Refuses to delete directories. (micro-feature 1.4)
 - `rename_note(from, to)` — moves/renames a note within the vault. Both paths validated. Refuses collisions and missing source. (micro-feature 1.4)
+- `read_note(path)` — returns `NoteContent` (`{path, content, modified_at}`) for a single note. UTF-8 validated; rejects missing files, directories, and non-`.md`/`.markdown` extensions. (micro-feature 1.5)
+- `write_note(path, content)` — overwrites (or creates) the note at `path` with `content`. Returns `WriteResult` (`{path, modified_at}`). Rejects missing parents, directory targets, and non-note extensions. (micro-feature 1.5)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 
@@ -354,7 +364,7 @@ right ("Editor lands in 1.5").
 ### What's NOT in 1.4 (deferred to 1.5)
 
 - `read_note` / `write_note` IPC commands — they only make sense
-  with the CodeMirror editor.
+  with the CodeMirror editor. _(shipped in 1.5)_
 - Folder creation via UI — `create_note` can write into an
   existing folder, but there's no `create_folder` IPC. Users can
   create folders out-of-band for now.
@@ -363,6 +373,60 @@ right ("Editor lands in 1.5").
 - The notify watcher (stage 3) — the design supports it
   (mutations already invalidate the right cache keys), but
   external edits don't auto-refresh the tree yet.
+
+## Editor (micro-feature 1.5)
+
+CodeMirror 6 wrapper, Source mode only, single editor (no tabs yet).
+Editing a Markdown file from the tree mounts `<Editor path={…} />` in
+the right pane; the close button flushes the in-flight autosave
+silently and clears the selection.
+
+### Backend layout
+
+- `src-tauri/src/fs/note.rs` — `read_note_in(vault_root, relative) -> AppResult<NoteContent>` and
+  `write_note_in(vault_root, relative, content) -> AppResult<WriteResult>`. UTF-8 guard, parent-exists
+  check, non-`.md`/`.markdown` extension rejection, directory-target rejection, `modified_at` from mtime.
+- `src-tauri/src/commands/tree.rs` — `read_note` / `write_note` IPC wrappers (registered alongside
+  the tree CRUD). Both run on `tokio::task::spawn_blocking` so the IPC thread is never blocked on
+  filesystem I/O.
+- `src-tauri/src/lib.rs` — registers the two new handlers (12 total now).
+- `src-tauri/tests/note_io.rs` — 10 `tauri::test::mock_app()` tests: read returns content, read
+  rejects missing/directory/non-UTF8, write creates/overwrites/empty, write rejects missing parent
+  / directory target / non-note extension, write advances mtime.
+
+### Frontend layout
+
+- `src/types/note.ts` — `WriteResult` (`{path, modified_at}`).
+- `src/ipc/note.ts` — typed `readNote(path)` / `writeNote(path, content)` wrappers.
+- `src/hooks/useNote.ts` — `useReadNote(path, {enabled})` (5s staleTime, same shape as
+  `useTreeChildren`) and `useWriteNoteMutation()` with optimistic `setQueryData` on `onMutate`,
+  rollback in `onError`, and `treeChildrenKey(parentOf(path))` invalidation in `onSuccess`.
+- `src/components/Editor.tsx` — CodeMirror 6 view (`lineNumbers`, `history`, `highlightActiveLine`,
+  `lineWrapping`, `markdown()` lang, `oneDark` theme, `Mod-s` keymap) inside a flex column. An
+  `updateListener` debounces writes by 500ms; a separate `flushSave` ref-based function is invoked
+  by the close button and the `Mod-s` keymap. The view is destroyed and recreated when `path` or
+  `read.data` changes (effect deps are minimal: `[path, read.data]`); the status chip only auto-
+  resets to "Saved" on initial load, never after a save error or in-flight save.
+- `src/__tests__/Editor.test.tsx` — 5 tests: renders path + close, saving-gated-promise → Saved,
+  error chip + toast on `AppError`, close calls `onClose`, old view destroyed on path change.
+- `src/__tests__/setup.tsx` — codemirror modules mocked globally (`EditorState.create`,
+  `EditorView`, `keymap`, `lineNumbers`, `highlightActiveLine`, `lineWrapping`, `markdown`,
+  `oneDark`, commands). Exports `cmUpdateListeners`, `setCmSharedDoc`, `fireCmUpdate` for tests
+  to simulate user typing without rendering a real CodeMirror in jsdom.
+- `src/__tests__/App.test.tsx` — new test: clicking a file in the tree mounts `<Editor>`; clicking
+  the close button unmounts it and returns to the empty-main placeholder.
+
+### What 1.5 deliberately does NOT include
+
+- **Tabs** — single editor instance. The plan in 1.5.1+ adds a tab bar with dirty markers.
+- **Live Preview** — Source mode only. Live Preview is a stage-2 item that depends on the
+  markdown engine decision.
+- **Wikilink jump-to** — `[[note]]` is rendered as plain text by `markdown()`. Click-to-jump
+  needs the link index, which is stage 3.
+- **File-changed-on-disk detection** — `notify` watcher lands in stage 3. For now, the editor
+  trusts its own write; if the file changes externally, the editor won't notice.
+- **Discard-changes prompt** — the close button awaits the in-flight autosave, then closes.
+  No "unsaved changes" modal. This is a deliberate UX deferral.
 
 ## Database Schema
 
