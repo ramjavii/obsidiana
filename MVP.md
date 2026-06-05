@@ -33,7 +33,7 @@ Core editor & linking:
 - [ ] Wikilinks `[[note]]` with shortest-path resolution and broken-link styling
   - [x] 2.1: extract wikilinks via Rust preprocessor (IPC: `extract_wikilinks`)
   - [x] 2.2: resolve wikilinks with shortest-path matching (IPC: `resolve_wikilink`)
-  - [ ] 2.3: CodeMirror syntax highlighting for `[[note]]`
+  - [x] 2.3: CodeMirror syntax highlighting for `[[note]]`
   - [ ] 2.4: click-to-jump on resolved wikilinks; broken-link styling + "Create note" affordance
 - [ ] Live Preview / Obsidian-like WYSIWYG editor
   - [ ] 2.5: pick markdown engine (Rust `markdown-rs` vs JS `remark-parse` in a Web Worker); ADR in `docs/architecture.md`

@@ -15,12 +15,19 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 export const cmUpdateListeners: Array<(u: unknown) => void> = [];
 export let cmSharedDoc = "";
+export const cmLastExtensions: unknown[] = [];
 
 vi.mock("@codemirror/state", () => ({
   EditorState: {
-    create: (cfg: { doc?: string }) => ({
-      doc: { toString: () => cmSharedDoc || cfg.doc || "" },
-    }),
+    create: (cfg: { doc?: string; extensions?: unknown[] }) => {
+      cmLastExtensions.length = 0;
+      if (cfg.extensions) {
+        for (const ext of cfg.extensions) cmLastExtensions.push(ext);
+      }
+      return {
+        doc: { toString: () => cmSharedDoc || cfg.doc || "" },
+      };
+    },
   },
   Compartment: class {
     reconfigure() {
@@ -28,8 +35,8 @@ vi.mock("@codemirror/state", () => ({
     }
   },
 }));
-vi.mock("@codemirror/view", () => ({
-  EditorView: class {
+vi.mock("@codemirror/view", () => {
+  class EditorView {
     state: { doc: { toString: () => string } };
     dom: HTMLElement;
     constructor(cfg: { state: { doc: { toString: () => string } }; parent: HTMLElement }) {
@@ -45,15 +52,49 @@ vi.mock("@codemirror/view", () => ({
     static updateListener = {
       of: (fn: (u: unknown) => void) => {
         cmUpdateListeners.push(fn);
-        return {};
+        return { __isUpdateListener: true, fn };
       },
     };
-  },
-  keymap: { of: () => ({}) },
-  lineNumbers: () => ({}),
-  highlightActiveLine: () => ({}),
-  lineWrapping: {},
-}));
+    static decorations: unknown = { __isDecorationFacet: true };
+  }
+
+  class Decoration {
+    spec: { class?: string; attributes?: Record<string, string> };
+    constructor(spec: { class?: string; attributes?: Record<string, string> }) {
+      this.spec = spec;
+    }
+    static mark(spec: { class?: string; attributes?: Record<string, string> }) {
+      return new Decoration(spec);
+    }
+    static none = { __isNone: true };
+  }
+
+  class MatchDecorator {
+    createDeco() {
+      return { __isDecoSet: true, size: 0, iter: () => null };
+    }
+    updateDeco(_update: unknown, decorations: unknown) {
+      return decorations;
+    }
+  }
+
+  class ViewPlugin {
+    static fromClass() {
+      return { __isViewPlugin: true };
+    }
+  }
+
+  return {
+    EditorView,
+    Decoration,
+    MatchDecorator,
+    ViewPlugin,
+    keymap: { of: () => ({}) },
+    lineNumbers: () => ({}),
+    highlightActiveLine: () => ({}),
+    lineWrapping: {},
+  };
+});
 vi.mock("@codemirror/commands", () => ({
   defaultKeymap: [],
   history: () => ({}),

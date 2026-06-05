@@ -4,6 +4,7 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirro
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { wikilinkHighlight } from "@/extensions/wikilinkHighlight";
 import { useReadNote, useWriteNoteMutation } from "@/hooks/useNote";
 import { reportError } from "@/hooks/useToastStore";
 
@@ -110,6 +111,7 @@ export function Editor({ path, onClose }: Props) {
         EditorView.lineWrapping,
         markdown(),
         oneDark,
+        wikilinkHighlight,
         saveKeymap,
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         updateListener,

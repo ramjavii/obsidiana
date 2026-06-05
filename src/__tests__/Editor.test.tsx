@@ -11,9 +11,11 @@ import type { ReactNode } from "react";
 import {
   invokeMock,
   cmUpdateListeners,
+  cmLastExtensions,
   setCmSharedDoc,
   fireCmUpdate,
 } from "@/__tests__/setup";
+import { wikilinkHighlight } from "@/extensions/wikilinkHighlight";
 import { Editor } from "@/components/Editor";
 import { ToastHost } from "@/components/ToastHost";
 
@@ -38,6 +40,7 @@ beforeEach(() => {
   invokeMock.mockReset();
   invokeMock.mockImplementation(() => Promise.resolve(null));
   cmUpdateListeners.length = 0;
+  cmLastExtensions.length = 0;
   setCmSharedDoc("# hi");
 });
 
@@ -234,5 +237,26 @@ describe("Editor", () => {
     });
 
     expect(cmUpdateListeners.length).toBe(listenersBefore);
+  });
+
+  it("mounts the editor with wikilink content without errors (2.3)", async () => {
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "See [[note]] and [[other|alias]] but ![[embed]] is not styled",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<Editor path="hello.md" onClose={() => undefined} />, {
+      wrapper: wrapperFactory(),
+    });
+    await screen.findByTestId("editor");
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saved");
+    });
+    expect(cmLastExtensions).toContain(wikilinkHighlight);
   });
 });

@@ -42,6 +42,8 @@ obsidiana/
 │   │   ├── FileTree.tsx                 # recursive tree: expand dirs, right-click menu, select files
 │   │   ├── ToastHost.tsx                # global error/success/info toasts
 │   │   └── VaultSwitcher.tsx            # header pill: current vault + recents + close
+│   ├── extensions/
+│   │   └── wikilinkHighlight.ts     # CodeMirror MatchDecorator + ViewPlugin; cm-wikilink / cm-wikilink-unresolved (2.3)
 │   ├── env.d.ts
 │   ├── errors.ts                        # AppError TS discriminated union (5 variants, mirrors Rust)
 │   ├── hooks/
@@ -73,6 +75,7 @@ obsidiana/
 │       ├── errors.test.ts               # isAppError, parseAppError, appErrorMessage (5 variants)
 │       ├── ipc.test.ts                  # ok / AppError rejection / wrapped Internal
 │       ├── useMarkdown.test.tsx         # useExtractWikilinks + useResolveWikilink: IPC call, key, enabled=false, error surface (2.1, 2.2)
+│       ├── wikilinkHighlight.test.ts    # regex match/alias/embed-exclusion/empty/newline cases (2.3)
 │       ├── useNote.test.tsx             # read cmd match, enabled skip, optimistic update, rollback on AppError (1.5)
 │       ├── useVault.test.tsx            # auto-open last vault, mutations reflect in status
 │       └── setup.tsx                    # mocks @tauri-apps/api/core + codemirror modules + renderWithProviders()
@@ -168,6 +171,8 @@ obsidiana/
 | 2026-06-05 | **2.2 wikilink resolution: "shortest path" = fewest combined `..` + named-segment steps between the source dir and the candidate dir.** Distance is `up + down` from the longest common prefix. Ties broken by alphabetical order of the resolved path. | The spec says "shortest relative path from the source" (spec §6.2). Counting both upward and downward moves captures "how many directory hops" intuitively: a sibling is 2 (1 up + 1 down), a same-dir candidate is 0, and the source's own dir is the same as itself. Alphabetical tiebreak is deterministic and stable across re-orders. |
 | 2026-06-05 | **2.2 wikilink target shape: bare-name vs path-style split.** A target is path-style if it contains `/` (exact relative-path match; `.md`/`.markdown` appended when no extension is present). Otherwise it is a bare-name stem search (case-insensitive) across the whole vault. | Mirrors the Obsidian convention. The split is enforced at the top of `resolve::resolve_wikilink` and the `..`/absolute rejections are layered on top of `validate_relative_path` so a bad target string cannot escape the vault even via the resolver. |
 | 2026-06-05 | **2.2 `ResolvedLink` is a tagged enum (`resolved` \| `broken`)** instead of a flat struct with `Option<resolvedPath>`. | The TS discriminated union lets the consumer narrow on `kind` before reading `resolvedPath`, which is more idiomatic than a flat `Option` and keeps the JSON shape stable when we add more variants later (e.g. `Resolved` with a `sectionNotFound` flag in 2.4). |
+| 2026-06-05 | **2.3 wikilink highlighter is a `MatchDecorator` + `ViewPlugin`**, not a custom CodeMirror `Language` extension. The regex uses JavaScript lookbehind (`(?<!!)`) to exclude `![[embed]]` matches directly, instead of the Rust 2.1 style post-match byte test. | `MatchDecorator` is the canonical CodeMirror pattern for regex-based syntax decoration; it auto-tracks viewport changes and re-decorates only the affected ranges. A full `Language` extension is overkill for one regex and would duplicate the Markdown parser's work. The regex itself is a JS lookbehind because V8/SpiderMonkey (Node 20) support it; the Rust extractor has no lookbehind in the `regex` crate and uses a post-check, so the two implementations differ in mechanism but agree on behavior — both exclude `![[…]]`. |
+| 2026-06-05 | **2.3 decoration has two CSS classes (`cm-wikilink cm-wikilink-unresolved`)** instead of one, as a forward-compat hook for 2.4. | 2.4 will swap `cm-wikilink-unresolved` for `cm-wikilink-resolved` or `cm-wikilink-broken` as the link index (stage 3) fills in. The base class is stable; the second class is the "state" slot. This is the same idiom as `oneDark`'s `cm-activeLine` / `cm-activeLineGutter` pair. |
 
 ## Toolchain
 
@@ -200,6 +205,7 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `write_note(path, content)` — overwrites (or creates) the note at `path` with `content`. Returns `WriteResult` (`{path, modified_at}`). Rejects missing parents, directory targets, and non-note extensions. (micro-feature 1.5)
 - `extract_wikilinks(path)` — reads the note at `path` and returns `Vec<WikilinkRef>` (`{target, alias, line}`) for every `[[note]]` / `[[note|alias]]` occurrence. Excludes embeds (`![[...]]`), skips empty targets, trims whitespace. Line numbers are 1-indexed. (micro-feature 2.1)
 - `resolve_wikilink(source_path, target, alias)` — returns a `ResolvedLink` tagged union (`resolved` or `broken`). The target is split on the first `#` to separate the note name from the section. The name is path-style (contains `/`) or bare-name (stem search, case-insensitive). When multiple notes share the same stem, the resolver picks the candidate with the shortest relative path from `source_path` (fewest combined `..` + down steps). Ties broken by alphabetical order of the resolved path. `resolved_path` is the candidate's relative path; `section` and `alias` are echoed back unmodified. Section existence is not validated in 2.2 — that lands in 2.4. (micro-feature 2.2)
+- *no new IPC in 2.3* — the wikilink syntax highlighter is purely a frontend `CodeMirror` `MatchDecorator` + `ViewPlugin` extension (`src/extensions/wikilinkHighlight.ts`). It decorates `[[note]]` and `[[note|alias]]` ranges with a `cm-wikilink cm-wikilink-unresolved` CSS class. Embeds (`![[…]]`) are excluded via a JavaScript lookbehind. No IPC call is made per keystroke; resolve-time styling lands in 2.4 when the link index from stage 3 is available. (micro-feature 2.3)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 
@@ -665,6 +671,71 @@ the click-to-jump / broken-link styling surfaces in 2.4.
 - **No codemirror / rendering integration.** The hook exists and
   is tested; 2.3 (syntax highlighting) and 2.4 (click-to-jump,
   broken-link styling) are the first callers.
+
+## Wikilink syntax highlighting (micro-feature 2.3)
+
+Stage 2's first visual "this is a wikilink" affordance: every
+`[[note]]` and `[[note|alias]]` in the editor gets a distinct
+purple+underline decoration. `![[embed]]` is not decorated
+(matches the 2.1 extractor rule). No click handler, no resolve
+lookup, no broken-link styling — those are 2.4.
+
+### Frontend layout
+
+- `src/extensions/wikilinkHighlight.ts` (new) — exports
+  `WIKILINK_PATTERN` and `wikilinkHighlight`. The pattern is
+  `/(?<!!)\[\[(\S[^[\]\n|]*)(?:\|([^[\]\n]+))?\]\]/g`:
+  - `(?<!!)` — JavaScript lookbehind excludes `![[…]]` embeds
+    directly in the regex (the Rust 2.1 extractor uses a post-match
+    byte test because the `regex` crate has no lookbehind; same
+    observable behavior, two different mechanisms).
+  - The target is captured as group 1, requires a non-whitespace
+    first char (`\S`) so `[[ ]]` and `[[\n…]]` are not matched.
+    The alias is group 2, optional, no newlines.
+  - The decoration is `Decoration.mark({ class: "cm-wikilink
+    cm-wikilink-unresolved" })`. Two classes on purpose: 2.4 will
+    swap `cm-wikilink-unresolved` for `cm-wikilink-resolved` or
+    `cm-wikilink-broken` as the link index (stage 3) fills in.
+- The extension is a `ViewPlugin.fromClass(WikilinkHighlightPlugin)`
+  wrapping a `MatchDecorator`. On `docChanged` or `viewportChanged`
+  the plugin calls `decorator.updateDeco(update, this.decorations)`.
+  No IPC calls in 2.3.
+- `src/components/Editor.tsx` — `wikilinkHighlight` is added to
+  the `extensions` array (right after `oneDark`).
+- `src/styles.css` — one rule, `.cm-wikilink { color:
+  rgb(167, 139, 250); text-decoration: underline;
+  text-decoration-color: rgba(167, 139, 250, 0.4);
+  text-underline-offset: 2px; }`. Purple + underline is
+  high-contrast on `oneDark` (cyan/blue palette) and matches
+  Obsidian's own wikilink styling.
+- `src/__tests__/wikilinkHighlight.test.ts` (new) — 6 unit tests
+  covering: bare `[[note]]`, aliased `[[note|alias]]`, embed
+  exclusion via lookbehind, mixed bare/aliased/embed in one line,
+  empty target rejected, target containing a newline rejected.
+- `src/__tests__/setup.tsx` — `EditorState.create` mock now
+  captures the `extensions` argument into a `cmLastExtensions`
+  array; the `@codemirror/view` mock gains stubs for `Decoration`,
+  `MatchDecorator`, and `ViewPlugin.fromClass` so `wikilinkHighlight`
+  can be imported by tests without hitting real CodeMirror.
+- `src/__tests__/Editor.test.tsx` — one new test ("mounts the
+  editor with wikilink content without errors (2.3)") verifies
+  the editor mounts with a note containing `[[note]]`,
+  `[[other|alias]]`, and `![[embed]]`, the status reaches
+  "Saved", and `cmLastExtensions` contains the `wikilinkHighlight`
+  reference. The structural assertion is what catches "someone
+  removed the extension from the editor's extension list" in
+  a future refactor.
+
+### Known limitations (deferred)
+
+- **Wikilinks inside fenced code blocks or inline-code spans are
+  highlighted as if live.** The regex does not know about Markdown
+  structure. Same limitation as the 2.1 extractor; a fence-aware
+  highlighter is a 2.4 follow-up.
+- **No resolve lookup, no broken-link styling.** 2.3 is purely a
+  visual highlight. 2.4 layers the resolved/broken distinction on
+  top of the same `cm-wikilink` decoration by reading the link
+  index from stage 3 and swapping the second CSS class.
 
 ## Database Schema
 
