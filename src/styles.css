@@ -9,3 +9,15 @@
   text-underline-offset: 2px;
 }
 
+.cm-wikilink-resolved {
+  color: rgb(134, 239, 172);
+  cursor: pointer;
+}
+
+.cm-wikilink-broken {
+  color: rgb(252, 165, 165);
+  cursor: pointer;
+  text-decoration-style: wavy;
+  text-decoration-color: rgba(252, 165, 165, 0.6);
+}
+

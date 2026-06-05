@@ -4,8 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useExtractWikilinks,
   useResolveWikilink,
+  useWikilinkResolutionMap,
   resolveWikilinkKey,
   wikilinksKey,
+  wikilinkMapKey,
 } from "@/hooks/useMarkdown";
 import type { ResolvedLink, WikilinkRef } from "@/types/markdown";
 import { invokeMock } from "./setup";
@@ -167,5 +169,90 @@ describe("useResolveWikilink", () => {
     expect(result.current.isFetching).toBe(false);
     expect(result.current.data).toBeUndefined();
     expect(invokeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("useWikilinkResolutionMap", () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(() => Promise.resolve(null));
+  });
+
+  it("fires no IPC for an empty wikilink list", async () => {
+    const { result } = renderHook(
+      () => useWikilinkResolutionMap("source.md", []),
+      { wrapper: wrapperFactory() },
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    expect(result.current.size).toBe(0);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("resolves every unique (target, alias) and exposes a keyed map", async () => {
+    const responses: ResolvedLink[] = [
+      {
+        kind: "resolved",
+        target: "a",
+        sourcePath: "source.md",
+        resolvedPath: "a.md",
+        section: null,
+        alias: null,
+      },
+      {
+        kind: "broken",
+        target: "b",
+        sourcePath: "source.md",
+        section: "Sec",
+        alias: "B Display",
+      },
+    ];
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "resolve_wikilink") {
+        const args = (invokeMock.mock.calls.at(-1)?.[1] ?? {}) as {
+          target: string;
+          alias: string | null;
+        };
+        const hit = responses.find(
+          (r) => r.target === args.target && (r.alias ?? null) === (args.alias ?? null),
+        );
+        return Promise.resolve(hit ?? null);
+      }
+      return Promise.resolve(null);
+    });
+    const wikilinks: WikilinkRef[] = [
+      { target: "a", alias: null, line: 1 },
+      { target: "b", alias: "B Display", line: 2 },
+    ];
+    const { result } = renderHook(
+      () => useWikilinkResolutionMap("source.md", wikilinks),
+      { wrapper: wrapperFactory() },
+    );
+    await waitFor(() => expect(result.current.size).toBe(2));
+    expect(result.current.get(wikilinkMapKey("a", null))?.kind).toBe("resolved");
+    expect(result.current.get(wikilinkMapKey("b", "B Display"))?.kind).toBe("broken");
+  });
+
+  it("deduplicates identical (target, alias) pairs", async () => {
+    invokeMock.mockImplementation(() =>
+      Promise.resolve({
+        kind: "resolved",
+        target: "a",
+        sourcePath: "source.md",
+        resolvedPath: "a.md",
+        section: null,
+        alias: null,
+      } satisfies ResolvedLink),
+    );
+    const wikilinks: WikilinkRef[] = [
+      { target: "a", alias: null, line: 1 },
+      { target: "a", alias: null, line: 5 },
+    ];
+    const { result } = renderHook(
+      () => useWikilinkResolutionMap("source.md", wikilinks),
+      { wrapper: wrapperFactory() },
+    );
+    await waitFor(() => expect(result.current.size).toBe(1));
+    const calls = invokeMock.mock.calls.filter(([c]) => c === "resolve_wikilink");
+    expect(calls.length).toBe(1);
   });
 });

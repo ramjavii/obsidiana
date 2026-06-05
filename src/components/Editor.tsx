@@ -1,23 +1,53 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EditorState, type Extension } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
+import {
+  Compartment,
+  EditorState,
+  type Extension,
+} from "@codemirror/state";
+import {
+  EditorView,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+} from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { wikilinkHighlight } from "@/extensions/wikilinkHighlight";
+import {
+  WIKILINK_CLICK_HANDLER,
+  wikilinkHighlight,
+  type WikilinkClickActions,
+} from "@/extensions/wikilinkHighlight";
 import { useReadNote, useWriteNoteMutation } from "@/hooks/useNote";
 import { reportError } from "@/hooks/useToastStore";
+import {
+  useExtractWikilinks,
+  useWikilinkResolutionMap,
+  wikilinkMapKey,
+} from "@/hooks/useMarkdown";
+import type { ResolvedLink } from "@/types/markdown";
 
 type Status = "loading" | "idle" | "saving" | "saved" | "error";
 
 type Props = {
   path: string;
   onClose: () => void;
+  onJump?: (resolvedPath: string, section: string | null) => void;
+  onBrokenClick?: (target: string, sourcePath: string, alias: string | null) => void;
 };
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
+const NOOP = () => undefined;
 
-export function Editor({ path, onClose }: Props) {
+function readMap(
+  map: Map<string, ResolvedLink>,
+  target: string,
+  alias: string | null,
+): ResolvedLink | null {
+  return map.get(wikilinkMapKey(target, alias)) ?? null;
+}
+
+export function Editor({ path, onClose, onJump, onBrokenClick }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const viewPathRef = useRef<string | null>(null);
@@ -25,11 +55,27 @@ export function Editor({ path, onClose }: Props) {
   const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pathRef = useRef<string>(path);
   const onCloseRef = useRef<() => void>(onClose);
+  const onJumpRef = useRef<(resolvedPath: string, section: string | null) => void>(
+    onJump ?? NOOP,
+  );
+  const onBrokenClickRef = useRef<
+    (target: string, sourcePath: string, alias: string | null) => void
+  >(onBrokenClick ?? NOOP);
+  const compartmentRef = useRef<Compartment | null>(null);
+  if (compartmentRef.current === null) {
+    compartmentRef.current = new Compartment();
+  }
+  const mapRef = useRef<Map<string, ResolvedLink>>(new Map());
 
   const [status, setStatus] = useState<Status>("loading");
 
   const read = useReadNote(path);
   const write = useWriteNoteMutation();
+  const wikilinksQuery = useExtractWikilinks(path, { enabled: read.data !== undefined });
+  const wikilinks = wikilinksQuery.data ?? [];
+  const resolutionMap = useWikilinkResolutionMap(path, wikilinks);
+
+  mapRef.current = resolutionMap;
 
   const flushSaveRef = useRef<() => Promise<void>>(async () => undefined);
 
@@ -63,6 +109,25 @@ export function Editor({ path, onClose }: Props) {
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  useEffect(() => {
+    onJumpRef.current = onJump ?? NOOP;
+  }, [onJump]);
+
+  useEffect(() => {
+    onBrokenClickRef.current = onBrokenClick ?? NOOP;
+  }, [onBrokenClick]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    const comp = compartmentRef.current;
+    if (view === null || comp === null) return;
+    view.dispatch({
+      effects: comp.reconfigure(
+        wikilinkHighlight((target, alias) => readMap(mapRef.current, target, alias)),
+      ),
+    });
+  }, [resolutionMap]);
 
   useEffect(() => {
     if (read.data === undefined) return;
@@ -104,6 +169,17 @@ export function Editor({ path, onClose }: Props) {
         },
       ]);
 
+      const clickActions: WikilinkClickActions = {
+        onJump: (resolvedPath, section) => onJumpRef.current(resolvedPath, section),
+        onBrokenClick: (target, sourcePath, alias) =>
+          onBrokenClickRef.current(target, sourcePath, alias),
+        getState: (target, alias) => readMap(mapRef.current, target, alias),
+        getSourcePath: () => pathRef.current,
+      };
+
+      const compartment = compartmentRef.current;
+      if (compartment === null) return;
+
       const extensions: Extension[] = [
         lineNumbers(),
         history(),
@@ -111,7 +187,10 @@ export function Editor({ path, onClose }: Props) {
         EditorView.lineWrapping,
         markdown(),
         oneDark,
-        wikilinkHighlight,
+        compartment.of(
+          wikilinkHighlight((target, alias) => readMap(mapRef.current, target, alias)),
+        ),
+        WIKILINK_CLICK_HANDLER(clickActions),
         saveKeymap,
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         updateListener,

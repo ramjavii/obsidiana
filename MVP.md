@@ -34,7 +34,7 @@ Core editor & linking:
   - [x] 2.1: extract wikilinks via Rust preprocessor (IPC: `extract_wikilinks`)
   - [x] 2.2: resolve wikilinks with shortest-path matching (IPC: `resolve_wikilink`)
   - [x] 2.3: CodeMirror syntax highlighting for `[[note]]`
-  - [ ] 2.4: click-to-jump on resolved wikilinks; broken-link styling + "Create note" affordance
+  - [x] 2.4: click-to-jump on resolved wikilinks; broken-link styling + "Create note" affordance
 - [ ] Live Preview / Obsidian-like WYSIWYG editor
   - [ ] 2.5: pick markdown engine (Rust `markdown-rs` vs JS `remark-parse` in a Web Worker); ADR in `docs/architecture.md`
   - [ ] 2.6: inline render pipeline — bold, italic, headings, inline code, fenced code, links, and resolved wikilinks render visually while the cursor stays in source positions

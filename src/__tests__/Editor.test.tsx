@@ -12,10 +12,11 @@ import {
   invokeMock,
   cmUpdateListeners,
   cmLastExtensions,
+  cmReconfigures,
   setCmSharedDoc,
   fireCmUpdate,
+  resetCmTracking,
 } from "@/__tests__/setup";
-import { wikilinkHighlight } from "@/extensions/wikilinkHighlight";
 import { Editor } from "@/components/Editor";
 import { ToastHost } from "@/components/ToastHost";
 
@@ -39,8 +40,7 @@ function wrapperFactory() {
 beforeEach(() => {
   invokeMock.mockReset();
   invokeMock.mockImplementation(() => Promise.resolve(null));
-  cmUpdateListeners.length = 0;
-  cmLastExtensions.length = 0;
+  resetCmTracking();
   setCmSharedDoc("# hi");
 });
 
@@ -257,6 +257,203 @@ describe("Editor", () => {
     await waitFor(() => {
       expect(screen.getByTestId("editor-status")).toHaveTextContent("Saved");
     });
-    expect(cmLastExtensions).toContain(wikilinkHighlight);
+    const compartmentWrappers = cmLastExtensions.filter(
+      (ext) =>
+        ext &&
+        typeof ext === "object" &&
+        (ext as { __isCompartmentOf?: boolean }).__isCompartmentOf === true,
+    );
+    expect(compartmentWrappers.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Editor — wikilink click-to-jump (2.4)", () => {
+  function findClickHandler(): {
+    mousedown: (event: unknown, view: unknown) => boolean;
+  } {
+    const wrapper = cmLastExtensions.find(
+      (ext) =>
+        ext &&
+        typeof ext === "object" &&
+        (ext as { __isDomEventHandlers?: boolean }).__isDomEventHandlers === true,
+    ) as { handlers: Record<string, (event: unknown, view: unknown) => boolean> } | undefined;
+    if (!wrapper) throw new Error("WIKILINK_CLICK_HANDLER not found in extensions");
+    if (typeof wrapper.handlers.mousedown !== "function") {
+      throw new Error("mousedown handler not found in click handler extension");
+    }
+    return { mousedown: wrapper.handlers.mousedown };
+  }
+
+  function makeFakeClickEvent(target: HTMLElement): {
+    target: HTMLElement;
+    altKey: boolean;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    shiftKey: boolean;
+    preventDefault: () => void;
+  } {
+    return {
+      target,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      preventDefault: () => undefined,
+    };
+  }
+
+  it("calls onJump with the resolved path when a resolved wikilink is clicked", async () => {
+    invokeMock.mockImplementation((cmd: unknown, args?: unknown) => {
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "See [[note]] here",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      if (cmd === "extract_wikilinks") {
+        return Promise.resolve([{ target: "note", alias: null, line: 1 }]);
+      }
+      if (cmd === "resolve_wikilink") {
+        return Promise.resolve({
+          kind: "resolved",
+          target: (args as { target: string }).target,
+          sourcePath: "hello.md",
+          resolvedPath: "note.md",
+          section: null,
+          alias: null,
+        });
+      }
+      return Promise.resolve(null);
+    });
+    const onJump = vi.fn();
+    render(
+      <Editor
+        path="hello.md"
+        onClose={() => undefined}
+        onJump={onJump}
+        onBrokenClick={() => undefined}
+      />,
+      { wrapper: wrapperFactory() },
+    );
+    await screen.findByTestId("editor");
+    await waitFor(
+      () => {
+        const calls = invokeMock.mock.calls.filter(([c]) => c === "resolve_wikilink");
+        expect(calls.length).toBeGreaterThan(0);
+      },
+      { timeout: 3000 },
+    );
+    const { mousedown } = findClickHandler();
+    const el = document.createElement("span");
+    el.setAttribute("data-wikilink-target", "note");
+    el.className = "cm-wikilink cm-wikilink-resolved";
+    document.body.appendChild(el);
+    try {
+      mousedown(makeFakeClickEvent(el), null);
+      expect(onJump).toHaveBeenCalledWith("note.md", null);
+    } finally {
+      el.remove();
+    }
+  });
+
+  it("calls onBrokenClick when a broken wikilink is clicked", async () => {
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "See [[ghost]] here",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      if (cmd === "extract_wikilinks") {
+        return Promise.resolve([{ target: "ghost", alias: null, line: 1 }]);
+      }
+      if (cmd === "resolve_wikilink") {
+        return Promise.resolve({
+          kind: "broken",
+          target: "ghost",
+          sourcePath: "hello.md",
+          section: null,
+          alias: null,
+        });
+      }
+      return Promise.resolve(null);
+    });
+    const onBrokenClick = vi.fn();
+    render(
+      <Editor
+        path="hello.md"
+        onClose={() => undefined}
+        onJump={() => undefined}
+        onBrokenClick={onBrokenClick}
+      />,
+      { wrapper: wrapperFactory() },
+    );
+    await screen.findByTestId("editor");
+    await waitFor(
+      () => {
+        const calls = invokeMock.mock.calls.filter(([c]) => c === "resolve_wikilink");
+        expect(calls.length).toBeGreaterThan(0);
+      },
+      { timeout: 3000 },
+    );
+    const { mousedown } = findClickHandler();
+    const el = document.createElement("span");
+    el.setAttribute("data-wikilink-target", "ghost");
+    el.className = "cm-wikilink cm-wikilink-broken";
+    document.body.appendChild(el);
+    try {
+      mousedown(makeFakeClickEvent(el), null);
+      expect(onBrokenClick).toHaveBeenCalledWith("ghost", "hello.md", null);
+    } finally {
+      el.remove();
+    }
+  });
+
+  it("reconfigures the wikilink compartment when the resolution map updates", async () => {
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "See [[ghost]] here",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      if (cmd === "extract_wikilinks") {
+        return Promise.resolve([{ target: "ghost", alias: null, line: 1 }]);
+      }
+      if (cmd === "resolve_wikilink") {
+        return Promise.resolve({
+          kind: "broken",
+          target: "ghost",
+          sourcePath: "hello.md",
+          section: null,
+          alias: null,
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(
+      <Editor
+        path="hello.md"
+        onClose={() => undefined}
+        onJump={() => undefined}
+        onBrokenClick={() => undefined}
+      />,
+      { wrapper: wrapperFactory() },
+    );
+    await screen.findByTestId("editor");
+    await waitFor(
+      () => {
+        const calls = invokeMock.mock.calls.filter(([c]) => c === "resolve_wikilink");
+        expect(calls.length).toBeGreaterThan(0);
+      },
+      { timeout: 3000 },
+    );
+    await waitFor(() => {
+      const reconfigureWithExt = cmReconfigures.filter((r) => r.ext !== undefined);
+      expect(reconfigureWithExt.length).toBeGreaterThan(0);
+    });
   });
 });

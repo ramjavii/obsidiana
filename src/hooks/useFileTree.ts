@@ -72,3 +72,18 @@ export function useRenameNoteMutation() {
     ({ from, to }) => Array.from(new Set([parentOf(from), parentOf(to)])),
   );
 }
+
+export function withNoteExtension(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return name;
+  return `${name}.md`;
+}
+
+export function brokenWikilinkPath(
+  target: string,
+  sourcePath: string,
+): string {
+  const fileName = withNoteExtension(target);
+  const dir = parentOf(sourcePath);
+  return dir ? `${dir}/${fileName}` : fileName;
+}

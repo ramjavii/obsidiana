@@ -737,6 +737,50 @@ lookup, no broken-link styling — those are 2.4.
   top of the same `cm-wikilink` decoration by reading the link
   index from stage 3 and swapping the second CSS class.
 
+## Wikilink click-to-jump (micro-feature 2.4)
+
+Clicking a highlighted wikilink in the editor now does something:
+resolved links jump to the target note; broken links open a
+`window.confirm` "Create note?" prompt that calls the existing
+`create_note` IPC and selects the new file in the file tree. The
+distinction is layered on the same 2.3 decoration by adding a
+second CSS class (`cm-wikilink-resolved` or `cm-wikilink-broken`).
+
+Key wiring:
+- `src/extensions/wikilinkHighlight.ts` is now a factory
+  `wikilinkHighlight(getState)` plus a separate
+  `WIKILINK_CLICK_HANDLER(actions)` extension. The factory is
+  reconfigured (via `Compartment`) every time the resolution map
+  changes, so the `MatchDecorator` re-reads each span's state and
+  swaps the class. The click handler is **not** reconfigured; it
+  holds a ref to the latest resolution map and reads it on click.
+- `src/hooks/useMarkdown.ts` exports a new `useWikilinkResolutionMap`
+  hook that batch-resolves every wikilink in the current note via
+  `resolve_wikilink` (TanStack `useQueries`), keyed by
+  `wikilinkMapKey(target, alias)`.
+- `src/components/Editor.tsx` now takes `onJump` and `onBrokenClick`
+  callbacks. The broken-link handler in `App.tsx` runs the
+  `window.confirm` flow, calls `useCreateNoteMutation`, and selects
+  the new path. The reconfigure effect fires on every
+  `resolutionMap` change.
+- `src/hooks/useFileTree.ts` exports `brokenWikilinkPath` (the path
+  the resolver would create) and `withNoteExtension` (`.md` if no
+  extension) so the "Create note" affordance targets the right
+  file.
+
+Limitations (deliberate, MVP-scope):
+- Section jumps (`[[note#Section]]`) are recorded but ignored. A
+  2.4.1 follow-up will dispatch a cursor-move into the rendered
+  preview once it exists (2.4.2).
+- The Create note path is fixed to the vault root. Moving it into
+  the same folder as the source note is a 2.4.1 follow-up.
+- No Live Preview re-render of the broken link after creation; the
+  user must close and reopen the source note for the
+  `resolve_wikilink` cache to refresh. This is acceptable for MVP
+  and will be revisited when stage 3's connection cache lands.
+- `window.confirm` matches the FileTree delete-confirm UX for now;
+  a proper modal is a 2.4.1 polish item.
+
 ## Database Schema
 
 See `spec.md` §3. Tables: `documents`, `connections`, `tags`, `vault_meta`.

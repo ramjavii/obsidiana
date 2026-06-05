@@ -8,6 +8,10 @@ import { VaultSwitcher } from "@/components/VaultSwitcher";
 import { FileTree } from "@/components/FileTree";
 import { Editor } from "@/components/Editor";
 import { useVaultStatus } from "@/hooks/useVault";
+import {
+  brokenWikilinkPath,
+  useCreateNoteMutation,
+} from "@/hooks/useFileTree";
 
 async function ping(): Promise<string> {
   const result = await ipcInvoke<string>("ping");
@@ -65,11 +69,31 @@ function DevPanel() {
 function Shell() {
   const { status } = useVaultStatus();
   const [selectedPath, setSelectedPath] = useState<string>("");
+  const createMutation = useCreateNoteMutation();
 
   if (status.kind !== "open") return <EmptyState />;
 
   function handleSelect(path: string) {
     setSelectedPath(path);
+  }
+
+  function handleJump(resolvedPath: string, _section: string | null) {
+    setSelectedPath(resolvedPath);
+  }
+
+  function handleBrokenClick(
+    target: string,
+    sourcePath: string,
+    _alias: string | null,
+  ) {
+    if (!window.confirm(`Create note '${target}'?`)) return;
+    const newPath = brokenWikilinkPath(target, sourcePath);
+    createMutation.mutate(
+      { path: newPath, template: "" },
+      {
+        onSuccess: () => setSelectedPath(newPath),
+      },
+    );
   }
 
   return (
@@ -94,6 +118,8 @@ function Shell() {
             <Editor
               path={selectedPath}
               onClose={() => setSelectedPath("")}
+              onJump={handleJump}
+              onBrokenClick={handleBrokenClick}
             />
           ) : (
             <div

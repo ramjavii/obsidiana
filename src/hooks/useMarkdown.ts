@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   extractWikilinks as extractWikilinksIpc,
   resolveWikilink as resolveWikilinkIpc,
@@ -44,4 +45,48 @@ export function useResolveWikilink(
     enabled: options?.enabled ?? true,
     staleTime: 5_000,
   });
+}
+
+export function wikilinkMapKey(target: string, alias: string | null): string {
+  return `${target}::${alias ?? ""}`;
+}
+
+export function useWikilinkResolutionMap(
+  sourcePath: string,
+  wikilinks: WikilinkRef[],
+): Map<string, ResolvedLink> {
+  const unique = useMemo(() => {
+    const seen = new Set<string>();
+    const out: WikilinkRef[] = [];
+    for (const w of wikilinks) {
+      const key = wikilinkMapKey(w.target, w.alias);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(w);
+    }
+    return out;
+  }, [wikilinks]);
+
+  const queries = useQueries({
+    queries: unique.map((w) => ({
+      queryKey: resolveWikilinkKey({
+        target: w.target,
+        sourcePath,
+        alias: w.alias,
+      }),
+      queryFn: () => resolveWikilinkIpc(sourcePath, w.target, w.alias),
+      staleTime: 5_000,
+    })),
+  });
+
+  return useMemo(() => {
+    const map = new Map<string, ResolvedLink>();
+    unique.forEach((w, i) => {
+      const data = queries[i]?.data;
+      if (data) {
+        map.set(wikilinkMapKey(w.target, w.alias), data);
+      }
+    });
+    return map;
+  }, [unique, queries]);
 }

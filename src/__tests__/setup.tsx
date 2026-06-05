@@ -16,6 +16,24 @@ vi.mock("@tauri-apps/api/core", () => ({
 export const cmUpdateListeners: Array<(u: unknown) => void> = [];
 export let cmSharedDoc = "";
 export const cmLastExtensions: unknown[] = [];
+export const cmReconfigures: Array<{ compartment: unknown; ext: unknown }> = [];
+export type CmDecorationSpec = {
+  class?: string;
+  attributes?: Record<string, string>;
+};
+export const cmLastDecorations: Array<{
+  from: number;
+  to: number;
+  spec: CmDecorationSpec;
+}> = [];
+
+export function resetCmTracking() {
+  cmUpdateListeners.length = 0;
+  cmLastExtensions.length = 0;
+  cmReconfigures.length = 0;
+  cmLastDecorations.length = 0;
+  cmSharedDoc = "";
+}
 
 vi.mock("@codemirror/state", () => ({
   EditorState: {
@@ -30,8 +48,18 @@ vi.mock("@codemirror/state", () => ({
     },
   },
   Compartment: class {
-    reconfigure() {
-      return {};
+    constructor() {
+      cmReconfigures.push({ compartment: this, ext: undefined });
+    }
+    of(ext: unknown) {
+      return { __isCompartmentOf: true, compartment: this, ext };
+    }
+    reconfigure(ext: unknown) {
+      cmReconfigures.push({ compartment: this, ext });
+      return { __isReconfigure: true, compartment: this, ext };
+    }
+    get(_state: unknown) {
+      return undefined;
     }
   },
 }));
@@ -46,8 +74,16 @@ vi.mock("@codemirror/view", () => {
     destroy() {
       this.dom.innerHTML = "";
     }
-    dispatch() {
+    dispatch(spec?: { effects?: unknown[] }) {
       cmSharedDoc = this.state.doc.toString();
+      if (spec && Array.isArray(spec.effects)) {
+        for (const eff of spec.effects) {
+          const e = eff as { __isReconfigure?: boolean; ext?: unknown; compartment?: unknown };
+          if (e && e.__isReconfigure) {
+            cmReconfigures.push({ compartment: e.compartment, ext: e.ext });
+          }
+        }
+      }
     }
     static updateListener = {
       of: (fn: (u: unknown) => void) => {
@@ -56,12 +92,20 @@ vi.mock("@codemirror/view", () => {
       },
     };
     static decorations: unknown = { __isDecorationFacet: true };
+    static domEventHandlers(handlers: Record<string, unknown>) {
+      return { __isDomEventHandlers: true, handlers };
+    }
   }
 
   class Decoration {
     spec: { class?: string; attributes?: Record<string, string> };
-    constructor(spec: { class?: string; attributes?: Record<string, string> }) {
+    from: number;
+    to: number;
+    constructor(spec: { class?: string; attributes?: Record<string, string> }, from = 0, to = 0) {
       this.spec = spec;
+      this.from = from;
+      this.to = to;
+      cmLastDecorations.push({ from, to, spec: { ...spec } });
     }
     static mark(spec: { class?: string; attributes?: Record<string, string> }) {
       return new Decoration(spec);
@@ -70,10 +114,28 @@ vi.mock("@codemirror/view", () => {
   }
 
   class MatchDecorator {
-    createDeco() {
+    regexp: RegExp;
+    decoration: (match: RegExpExecArray) => unknown;
+    constructor(cfg: { regexp: RegExp; decoration: (match: RegExpExecArray) => unknown }) {
+      this.regexp = cfg.regexp;
+      this.decoration = cfg.decoration;
+    }
+    scanDoc(view: { state: { doc: { toString: () => string } } }) {
+      const text = view.state.doc.toString();
+      const re = new RegExp(this.regexp.source, this.regexp.flags);
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) {
+        this.decoration(m);
+        if (m[0].length === 0) re.lastIndex += 1;
+      }
+    }
+    createDeco(view: { state: { doc: { toString: () => string } } }) {
+      this.scanDoc(view);
       return { __isDecoSet: true, size: 0, iter: () => null };
     }
-    updateDeco(_update: unknown, decorations: unknown) {
+    updateDeco(update: unknown, decorations: unknown) {
+      const u = update as { view?: { state: { doc: { toString: () => string } } } };
+      if (u && u.view) this.scanDoc(u.view);
       return decorations;
     }
   }
@@ -140,8 +202,7 @@ export function renderWithProviders(ui: ReactNode) {
 
 afterEach(() => {
   cleanup();
-  cmUpdateListeners.length = 0;
-  cmSharedDoc = "";
+  resetCmTracking();
   invokeMock.mockReset();
   invokeMock.mockImplementation(() => Promise.resolve("pong"));
 });
