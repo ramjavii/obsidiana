@@ -195,4 +195,44 @@ describe("Editor", () => {
       expect(cmUpdateListeners.length).toBeGreaterThan(listenersBefore);
     });
   });
+
+  it("preserves the view when read.data ref changes without a path change (regression for focus loss)", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    let readCount = 0;
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        readCount += 1;
+        return Promise.resolve({
+          path: "hello.md",
+          content: "# hi",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<Editor path="hello.md" onClose={() => undefined} />, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>
+          {children}
+          <ToastHost />
+        </QueryClientProvider>
+      ),
+    });
+    await screen.findByTestId("editor");
+    await waitFor(() => {
+      expect(cmUpdateListeners.length).toBeGreaterThanOrEqual(1);
+    });
+    const listenersBefore = cmUpdateListeners.length;
+
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["note", "read", "hello.md"] });
+    });
+    await waitFor(() => {
+      expect(readCount).toBeGreaterThan(1);
+    });
+
+    expect(cmUpdateListeners.length).toBe(listenersBefore);
+  });
 });

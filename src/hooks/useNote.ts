@@ -16,6 +16,7 @@ export function useReadNote(
     queryFn: () => readNoteIpc(path),
     enabled: options?.enabled ?? true,
     staleTime: 5_000,
+    refetchOnWindowFocus: false,
   });
 }
 

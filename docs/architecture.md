@@ -160,6 +160,9 @@ obsidiana/
 | 2026-06-05 | **2.1 micro-feature: wikilink extraction is a regex on raw text, not an AST walk.** `[[...]]` is matched; embed exclusion is a post-match byte test (`!` immediately before). | `pulldown-cmark` would be more correct (it knows about code fences, inline code, link syntax) but is overkill for a 2.1 slice whose only consumer is the eventual `resolve_wikilink` IPC. The regex covers all real-world wikilink shapes; the only thing it over-matches is wikilinks inside code fences, which 2.1 is allowed to ship. The fence-aware variant is a 2.4 follow-up. |
 | 2026-06-05 | **`require_vault_root` is `pub(crate)` and shared across command modules.** Previously private to `tree.rs`; the new `commands::markdown.rs` reuses the exact same gate. | Avoids copy-pasting the `state.vault.lock()` dance into every new command module. The helper is trivial and the rule it enforces (a vault must be open) is the same for every command. |
 | 2026-06-05 | **Markdown engine decision (Rust `markdown-rs` vs JS `remark-parse` Web Worker) is intentionally deferred past 2.1.** | 2.1 extracts wikilinks from raw text — no Markdown parser needed. The engine decision only matters once we ship Live Preview or another rendering surface. Picking now would be premature; the spec leaves it as an open question, and the AGENTS.md lets us pick either. We'll record the decision in an ADR right before the first feature that needs it. |
+| 2026-06-05 | **Live Preview / Obsidian-like WYSIWYG editor is wanted in MVP (micro-features 2.5–2.7).** Markdown engine pick (2.5) → inline render pipeline for bold/italic/headings/code/links/resolved-wikilinks (2.6) → Source/Live Preview/Reading-view mode toggle (2.7). | The user reconsidered the original "Source mode only" deferral after dogfooding 1.5: rendered inline previews (with the cursor staying in source positions) are the core feel of an Obsidian-like workspace. The 3-mode toggle stays in MVP but ships last, after the render pipeline is solid. |
+| 2026-06-05 | **Editor focus is preserved across autosave.** The mount effect's dependency on `read.data` was over-eager: any data ref change (e.g., refetch on window focus, or the autosave cycle's own re-render) destroyed the CodeMirror `EditorView`, which lost focus. The fix: (a) `useReadNote` now sets `refetchOnWindowFocus: false` to stop the data ref from churning on focus, and (b) the editor's effect only destroys the view when the `path` actually changes — `viewPathRef` gates recreation, and external content updates flow through `view.dispatch({changes})` instead of a full teardown. | Refocusing after every 500ms autosave debounce was the most-felt UX regression in 1.5. Both fixes are independent and complementary: the first stops the trigger, the second is defense in depth in case `useReadNote` is invalidated for any other reason (manual `invalidateQueries`, an external watcher invalidation in stage 3, etc.). |
+| 2026-06-05 | **Embedded opencode terminal panel is deferred past MVP** (not part of the Local AI stack). | The user wants a dockable terminal inside the app shell that runs the `opencode` CLI with the vault as CWD and can read the active note + the file tree. Useful for in-app AI assistance and ad-hoc vault scripting. It is a developer-ergonomics feature, not an AI feature, so it lives in a separate deferred bucket from the Local AI stack. |
 
 ## Toolchain
 
@@ -422,7 +425,7 @@ silently and clears the selection.
   by the close button and the `Mod-s` keymap. The view is destroyed and recreated when `path` or
   `read.data` changes (effect deps are minimal: `[path, read.data]`); the status chip only auto-
   resets to "Saved" on initial load, never after a save error or in-flight save.
-- `src/__tests__/Editor.test.tsx` — 5 tests: renders path + close, saving-gated-promise → Saved,
+- `src/__tests__/Editor.test.tsx` — 6 tests: renders path + close, saving-gated-promise → Saved,
   error chip + toast on `AppError`, close calls `onClose`, old view destroyed on path change.
 - `src/__tests__/setup.tsx` — codemirror modules mocked globally (`EditorState.create`,
   `EditorView`, `keymap`, `lineNumbers`, `highlightActiveLine`, `lineWrapping`, `markdown`,
@@ -435,13 +438,40 @@ silently and clears the selection.
 
 - **Tabs** — single editor instance. The plan in 1.5.1+ adds a tab bar with dirty markers.
 - **Live Preview** — Source mode only. Live Preview is a stage-2 item that depends on the
-  markdown engine decision.
+  markdown engine decision. _(Re-prioritized: planned in micro-features 2.5–2.7; see the
+  decision row dated 2026-06-05.)_
 - **Wikilink jump-to** — `[[note]]` is rendered as plain text by `markdown()`. Click-to-jump
   needs the link index, which is stage 3.
 - **File-changed-on-disk detection** — `notify` watcher lands in stage 3. For now, the editor
-  trusts its own write; if the file changes externally, the editor won't notice.
+  trusts its own write; if the file changes externally, the editor won't notice. When the
+  watcher lands, the editor will apply external content via `view.dispatch({changes})` (the
+  same code path the focus-preservation fix added) so the cursor isn't kicked on a remote
+  edit.
 - **Discard-changes prompt** — the close button awaits the in-flight autosave, then closes.
   No "unsaved changes" modal. This is a deliberate UX deferral.
+
+### Follow-up: editor focus preservation (commit on `feature/2.1-wikilink-extraction`)
+
+A 1.5 regression that surfaced in dogfooding: focus is lost 500ms after stopping typing
+(the autosave debounce fires). Root cause: the mount effect's `[path, read.data]` deps
+destroyed the CodeMirror `EditorView` whenever the data reference changed — and
+`useReadNote`'s default `refetchOnWindowFocus: true` re-fetched on every window focus,
+churning the data reference.
+
+Two complementary fixes (see the decision row dated 2026-06-05):
+
+- `src/hooks/useNote.ts` — `useReadNote` now sets `refetchOnWindowFocus: false`.
+- `src/components/Editor.tsx` — the mount effect now keeps a `viewPathRef` and only
+  destroys the view when the path actually mismatches. External content changes (from a
+  refetch that returns new content) flow through `view.dispatch({changes})` so the
+  cursor stays put. The same dispatch path is what stage 3's notify watcher will use
+  for external-edit detection, so this fix is forward-compatible.
+
+New regression test in `src/__tests__/Editor.test.tsx` —
+`preserves the view when read.data ref changes without a path change (regression for
+focus loss)`. The test forces a `client.invalidateQueries({queryKey: ["note","read",
+"hello.md"]})` and asserts that `cmUpdateListeners.length` does not increase (i.e., the
+view was NOT destroyed and recreated).
 
 ## Wikilink extraction (micro-feature 2.1)
 
@@ -531,9 +561,14 @@ Schema migrations land with stage 3.
 
 ## Open Questions / Backlog
 
-- Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in
-  a Web Worker. Decide in the editor stage (MVP stage 2).
+- Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a
+  Web Worker. Decide in micro-feature 2.5 (Live Preview / WYSIWYG editor).
+  No longer a "sometime in stage 2" question; it's the first thing 2.5 blocks on.
 - Decide on `react-force-graph` 2D vs 3D mode at implementation time.
+- Embedded opencode terminal panel: implementation surface is a
+  `tauri-plugin-shell` child process (`opencode` CLI) with the vault as CWD,
+  embedded as a xterm.js panel in a dockable sidebar. Needs an ADR before
+  the first slice ships.
 - ~~Pick a settings file format: JSON is fine for MVP; TOML is also viable.~~ Resolved 2026-06-03 — JSON.
 - Real icon set (designer assets). Current icons are placeholders generated
   by a Python script; a polish pass will replace them.

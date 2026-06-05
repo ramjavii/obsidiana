@@ -19,6 +19,7 @@ const AUTOSAVE_DEBOUNCE_MS = 500;
 export function Editor({ path, onClose }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const viewPathRef = useRef<string | null>(null);
   const persistedDocRef = useRef<string>("");
   const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pathRef = useRef<string>(path);
@@ -63,57 +64,76 @@ export function Editor({ path, onClose }: Props) {
   }, [onClose]);
 
   useEffect(() => {
-    pathRef.current = path;
     if (read.data === undefined) return;
-    if (viewRef.current !== null) {
-      viewRef.current.destroy();
-      viewRef.current = null;
-    }
-    persistedDocRef.current = read.data.content;
-    setStatus((prev) => (prev === "loading" || prev === "idle" ? "saved" : prev));
-
     const container = containerRef.current;
     if (container === null) return;
 
-    const updateListener = EditorView.updateListener.of((u) => {
-      if (!u.docChanged) return;
-      if (pendingTimeoutRef.current !== null) {
-        clearTimeout(pendingTimeoutRef.current);
-      }
-      setStatus("saving");
-      pendingTimeoutRef.current = setTimeout(() => {
-        void flushSaveRef.current();
-      }, AUTOSAVE_DEBOUNCE_MS);
-    });
+    pathRef.current = path;
 
-    const saveKeymap = keymap.of([
-      {
-        key: "Mod-s",
-        preventDefault: true,
-        run: () => {
+    if (viewRef.current !== null && viewPathRef.current !== path) {
+      viewRef.current.destroy();
+      viewRef.current = null;
+      viewPathRef.current = null;
+      persistedDocRef.current = "";
+    }
+
+    if (viewRef.current === null) {
+      persistedDocRef.current = read.data.content;
+      setStatus("saved");
+
+      const updateListener = EditorView.updateListener.of((u) => {
+        if (!u.docChanged) return;
+        if (pendingTimeoutRef.current !== null) {
+          clearTimeout(pendingTimeoutRef.current);
+        }
+        setStatus("saving");
+        pendingTimeoutRef.current = setTimeout(() => {
           void flushSaveRef.current();
-          return true;
+        }, AUTOSAVE_DEBOUNCE_MS);
+      });
+
+      const saveKeymap = keymap.of([
+        {
+          key: "Mod-s",
+          preventDefault: true,
+          run: () => {
+            void flushSaveRef.current();
+            return true;
+          },
         },
-      },
-    ]);
+      ]);
 
-    const extensions: Extension[] = [
-      lineNumbers(),
-      history(),
-      highlightActiveLine(),
-      EditorView.lineWrapping,
-      markdown(),
-      oneDark,
-      saveKeymap,
-      keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-      updateListener,
-    ];
+      const extensions: Extension[] = [
+        lineNumbers(),
+        history(),
+        highlightActiveLine(),
+        EditorView.lineWrapping,
+        markdown(),
+        oneDark,
+        saveKeymap,
+        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        updateListener,
+      ];
 
-    const state = EditorState.create({
-      doc: read.data.content,
-      extensions,
-    });
-    viewRef.current = new EditorView({ state, parent: container });
+      const state = EditorState.create({
+        doc: read.data.content,
+        extensions,
+      });
+      viewRef.current = new EditorView({ state, parent: container });
+      viewPathRef.current = path;
+      return;
+    }
+
+    if (read.data.content !== persistedDocRef.current) {
+      const view = viewRef.current;
+      const currentContent = view.state.doc.toString();
+      if (currentContent !== read.data.content) {
+        view.dispatch({
+          changes: { from: 0, to: currentContent.length, insert: read.data.content },
+        });
+      }
+      persistedDocRef.current = read.data.content;
+    }
   }, [path, read.data]);
 
   useEffect(() => {
