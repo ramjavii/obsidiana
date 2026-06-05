@@ -24,6 +24,8 @@
     }
   },
   "permission": {
+    "edit": "allow",
+    "webfetch": "allow",
     "bash": {
       "pnpm *": "allow",
       "npm *": "allow",
@@ -40,7 +42,7 @@
       "rg *": "allow",
       "mkdir *": "allow",
       "touch *": "allow",
-      "*": "ask"
+      "*": "allow"
     }
   }
 }
