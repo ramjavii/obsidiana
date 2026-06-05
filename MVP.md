@@ -69,7 +69,7 @@ Explicitly out of MVP (deferred to a later stage):
 
 ## Current Stage
 
-`Current Stage: 1 — Tauri shell + filesystem core`
+`Current Stage: 2 — Markdown engine + linking`
 
 ## Notes & Decisions
 
