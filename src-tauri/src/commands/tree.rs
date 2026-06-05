@@ -9,7 +9,7 @@ use crate::state::AppState;
 use std::path::PathBuf;
 use tauri::State;
 
-fn require_vault_root(state: &State<'_, AppState>) -> AppResult<PathBuf> {
+pub(crate) fn require_vault_root(state: &State<'_, AppState>) -> AppResult<PathBuf> {
     let guard = state
         .vault
         .lock()

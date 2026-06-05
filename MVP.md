@@ -31,6 +31,10 @@ Core editor & linking:
 - [x] File tree navigation (folders + Markdown files) (micro-feature 1.4)
 - [x] Open, edit, save Markdown files in a CodeMirror 6 editor (Source mode) (micro-feature 1.5)
 - [ ] Wikilinks `[[note]]` with shortest-path resolution and broken-link styling
+  - [x] 2.1: extract wikilinks via Rust preprocessor (IPC: `extract_wikilinks`)
+  - [ ] 2.2: resolve wikilinks with shortest-path matching (IPC: `resolve_wikilink`)
+  - [ ] 2.3: CodeMirror syntax highlighting for `[[note]]`
+  - [ ] 2.4: click-to-jump on resolved wikilinks; broken-link styling + "Create note" affordance
 - [ ] Tags `#parent/child` extracted and listed per note
 - [ ] Backlinks panel showing incoming links to the active note
 - [ ] Custom callouts / admonitions via Rust regex preprocessor

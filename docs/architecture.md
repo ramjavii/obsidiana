@@ -46,17 +46,20 @@ obsidiana/
 │   ├── errors.ts                        # AppError TS discriminated union (5 variants, mirrors Rust)
 │   ├── hooks/
 │   │   ├── useFileTree.ts               # useTreeChildren + create/delete/rename mutations
+│   │   ├── useMarkdown.ts               # useExtractWikilinks(path) keyed by ["markdown","wikilinks",path] (2.1)
 │   │   ├── useNote.ts                   # useReadNote + useWriteNoteMutation (optimistic, rollback, tree invalidation) (1.5)
 │   │   ├── useToastStore.ts             # Zustand store + reportAppError() / reportError()
 │   │   └── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
 │   ├── ipc.ts                           # typed invoke() wrapper → IpcResult<T>
 │   ├── ipc/
+│   │   ├── markdown.ts                  # typed wrapper for extract_wikilinks (2.1)
 │   │   ├── note.ts                      # typed wrappers for read_note / write_note (1.5)
 │   │   ├── tree.ts                      # typed wrappers for list_tree / create_note / delete_note / rename_note
 │   │   └── vault.ts                     # typed wrappers for pick/open/close/list_recent
 │   ├── main.tsx                         # React 18 createRoot + QueryClient + ToastHost
 │   ├── styles.css                       # @tailwind base/components/utilities
 │   ├── types/
+│   │   ├── markdown.ts                  # WikilinkRef { target, alias, line } (2.1)
 │   │   ├── note.ts                      # WriteResult (1.5)
 │   │   ├── tree.ts                      # TreeNode / TreeNodeKind / NoteContent / RenameReport
 │   │   └── vault.ts                     # VaultInfo / RecentVault / VaultStatus shapes
@@ -69,12 +72,13 @@ obsidiana/
 │       ├── VaultSwitcher.test.tsx       # toggle, recents, close-vault click
 │       ├── errors.test.ts               # isAppError, parseAppError, appErrorMessage (5 variants)
 │       ├── ipc.test.ts                  # ok / AppError rejection / wrapped Internal
+│       ├── useMarkdown.test.tsx         # useExtractWikilinks: IPC call, key, enabled=false, error surface (2.1)
 │       ├── useNote.test.tsx             # read cmd match, enabled skip, optimistic update, rollback on AppError (1.5)
 │       ├── useVault.test.tsx            # auto-open last vault, mutations reflect in status
 │       └── setup.tsx                    # mocks @tauri-apps/api/core + codemirror modules + renderWithProviders()
 ├── src-tauri/                           # backend (Rust 2021, Tauri 2)
 │   ├── .gitignore                       # gen/, target/, WixTools/
-│   ├── Cargo.toml                       # + tauri-plugin-dialog, dirs, chrono, tempfile
+│   ├── Cargo.toml                       # + tauri-plugin-dialog, dirs, chrono, regex, tempfile
 │   ├── build.rs
 │   ├── capabilities/
 │   │   └── default.json                 # core:default + dialog:default
@@ -88,23 +92,30 @@ obsidiana/
 │   ├── src/
 │   │   ├── commands/
 │   │   │   ├── error_demo.rs           # ping_or_fail: dev-only error-surface fixture
+│   │   │   ├── markdown.rs              # extract_wikilinks (2.1)
 │   │   │   ├── mod.rs
 │   │   │   ├── ping.rs                  # smoke IPC command, returns "pong"
-│   │   │   ├── tree.rs                  # list_tree / create_note / delete_note / rename_note
+│   │   │   ├── tree.rs                  # list_tree / create_note / delete_note / rename_note / read_note / write_note
 │   │   │   └── vault.rs                 # pick_vault / open_vault[/_force] / close_vault / list_recent_vaults
 │   │   ├── error.rs                     # AppError enum (5 variants) + helpers + unit tests
 │   │   ├── fs/
 │   │   │   ├── mod.rs
 │   │   │   ├── note.rs                  # create_note_in / delete_note_in / rename_note_in + NoteContent / RenameReport
 │   │   │   └── tree.rs                  # list_children + TreeNode / TreeNodeKind
-│   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + 10 handlers
+│   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + 13 handlers
 │   │   ├── main.rs                      # windows_subsystem = "windows" in release
+│   │   ├── markdown/
+│   │   │   ├── mod.rs
+│   │   │   ├── types.rs                 # WikilinkRef { target, alias, line }
+│   │   │   └── wikilink.rs              # extract_wikilinks(&str) + 12 unit tests
 │   │   ├── paths.rs                     # app_data_dir, settings_path, canonicalize_dir, validate_relative_path
 │   │   ├── settings.rs                  # Settings + RecentVaultEntry + Theme, JSON, atomic write
 │   │   └── state.rs                     # AppState { vault: Mutex<Option<VaultHandle>>, settings_path }
 │   ├── tauri.conf.json                  # identifier = "com.obsidiana.app"
 │   └── tests/
 │       ├── ipc_smoke.rs                 # tauri::test::mock_app() + direct-call tests
+│       ├── markdown_extract.rs          # 8 mock_app() tests for extract_wikilinks (2.1)
+│       ├── note_io.rs                   # 10 mock_app() tests for read_note / write_note (1.5)
 │       ├── tree_crud.rs                 # 20 mock_app() tests for all 4 tree commands + AppError paths
 │       └── vault_lifecycle.rs           # 16 mock_app() tests for all 4 vault commands + AppError paths
 ├── tailwind.config.ts
@@ -146,6 +157,9 @@ obsidiana/
 | 2026-06-03 | **Lazy-load subtrees via per-directory `list_tree(path)` calls.** Frontend maintains an `expanded: Set<path>` and the `useTreeChildren(path)` hook fires one query per expanded dir, cached by path. | Spec §5.1: "virtualized for thousands of files, lazy load subtrees". One query per expand keeps payload small and matches the `<details>`-style UX. Cache (5s staleTime) absorbs back-and-forth toggling. |
 | 2026-06-04 | **1.5 scope split: single editor (no tabs), Source mode only, no wikilink jump-to, no Live Preview, no custom key bindings beyond Ctrl/Cmd+S, no file-changed-on-disk detection.** Tabs land in 1.5.1+; Live Preview in stage 2 alongside the markdown engine decision. | Bundling all of that into 1.5 would balloon the diff past the 1.5 loop budget. Source mode + autosave + error surface is the minimum that lets us dogfood editing. |
 | 2026-06-04 | **Autosave on close is silent and best-effort.** No "you have unsaved changes" prompt, no discard option in 1.5. The close button awaits the in-flight write, then calls `onClose`. | Spec §5.1 says "never destructive" but the simplest non-destructive path is to save. A modal prompt is a UX decision that can wait for a polish pass after we have real users. |
+| 2026-06-05 | **2.1 micro-feature: wikilink extraction is a regex on raw text, not an AST walk.** `[[...]]` is matched; embed exclusion is a post-match byte test (`!` immediately before). | `pulldown-cmark` would be more correct (it knows about code fences, inline code, link syntax) but is overkill for a 2.1 slice whose only consumer is the eventual `resolve_wikilink` IPC. The regex covers all real-world wikilink shapes; the only thing it over-matches is wikilinks inside code fences, which 2.1 is allowed to ship. The fence-aware variant is a 2.4 follow-up. |
+| 2026-06-05 | **`require_vault_root` is `pub(crate)` and shared across command modules.** Previously private to `tree.rs`; the new `commands::markdown.rs` reuses the exact same gate. | Avoids copy-pasting the `state.vault.lock()` dance into every new command module. The helper is trivial and the rule it enforces (a vault must be open) is the same for every command. |
+| 2026-06-05 | **Markdown engine decision (Rust `markdown-rs` vs JS `remark-parse` Web Worker) is intentionally deferred past 2.1.** | 2.1 extracts wikilinks from raw text — no Markdown parser needed. The engine decision only matters once we ship Live Preview or another rendering surface. Picking now would be premature; the spec leaves it as an open question, and the AGENTS.md lets us pick either. We'll record the decision in an ADR right before the first feature that needs it. |
 
 ## Toolchain
 
@@ -176,6 +190,7 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `rename_note(from, to)` — moves/renames a note within the vault. Both paths validated. Refuses collisions and missing source. (micro-feature 1.4)
 - `read_note(path)` — returns `NoteContent` (`{path, content, modified_at}`) for a single note. UTF-8 validated; rejects missing files, directories, and non-`.md`/`.markdown` extensions. (micro-feature 1.5)
 - `write_note(path, content)` — overwrites (or creates) the note at `path` with `content`. Returns `WriteResult` (`{path, modified_at}`). Rejects missing parents, directory targets, and non-note extensions. (micro-feature 1.5)
+- `extract_wikilinks(path)` — reads the note at `path` and returns `Vec<WikilinkRef>` (`{target, alias, line}`) for every `[[note]]` / `[[note|alias]]` occurrence. Excludes embeds (`![[...]]`), skips empty targets, trims whitespace. Line numbers are 1-indexed. (micro-feature 2.1)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 
@@ -427,6 +442,85 @@ silently and clears the selection.
   trusts its own write; if the file changes externally, the editor won't notice.
 - **Discard-changes prompt** — the close button awaits the in-flight autosave, then closes.
   No "unsaved changes" modal. This is a deliberate UX deferral.
+
+## Wikilink extraction (micro-feature 2.1)
+
+Stage 2's first user-visible building block: a Rust preprocessor that scans a
+note's raw Markdown and returns its wikilinks. No resolution, no UI rendering,
+no SQLite — that follows in 2.2, 2.3, 2.4. This is the regex/text-scan slice
+that all later stage-2 features (resolve, render, click-to-jump) build on, and
+the same module layout will host tag, embed, block-ref, and callout extractors.
+
+### Backend layout
+
+- `src-tauri/Cargo.toml` — adds `regex = "1"`.
+- `src-tauri/src/markdown/mod.rs` — module root; re-exports `types` and
+  `wikilink`. Other link-type extractors (tags, embeds, block refs, callouts)
+  land as siblings in 2.5+.
+- `src-tauri/src/markdown/types.rs` — `WikilinkRef { target: String, alias:
+  Option<String>, line: usize }` with `#[serde(rename_all = "camelCase")]`
+  so the TS mirror sees identical key names.
+- `src-tauri/src/markdown/wikilink.rs` —
+  `pub fn extract_wikilinks(content: &str) -> Vec<WikilinkRef>`. Regex
+  `\[\[([^\[\]]+)\]\]` (the `regex` crate does not support lookbehind, so
+  the embed check is a post-match byte test: if the char immediately before
+  the match start is `!`, the match is an embed and is skipped). The inner
+  text is split on the first `|` for target vs alias. Whitespace is trimmed;
+  empty targets are dropped; empty aliases are coerced to `None`. Line
+  numbers are 1-indexed and computed by counting newlines in the byte
+  prefix. 12 unit tests cover the realistic cases (single, aliased, embed
+  exclusion, multiple, multi-line line tracking, whitespace, chained alias
+  `[[a|b|c]]`, empty alias, empty target, section `[[note#section]]` as a
+  single target, unbalanced brackets).
+- `src-tauri/src/commands/tree.rs` — `require_vault_root` is now
+  `pub(crate)` so the new `commands::markdown` module can reuse the same
+  gate pattern.
+- `src-tauri/src/commands/markdown.rs` — `extract_wikilinks_inner` and the
+  `#[tauri::command] extract_wikilinks` async wrapper. Inner takes
+  `tauri::State<'_, AppState>` so `tauri::test::mock_app()` tests can call
+  it without going through the IPC router. Inner calls `require_vault_root`
+  → `validate_relative_path` → `read_note_in` → `extract_wikilinks`. All
+  error paths (no vault, `..`, missing, directory) surface as `AppError`
+  variants exactly like the tree commands.
+- `src-tauri/src/commands/mod.rs` and `src-tauri/src/lib.rs` — register the
+  new module and add `extract_wikilinks` to the `invoke_handler!` macro.
+  Total handler count is now 13.
+- `src-tauri/tests/markdown_extract.rs` — 8 `tauri::test::mock_app()`
+  integration tests: empty note, target+alias, embed exclusion, multi-line
+  line tracking, `..` path rejected, missing file rejected, no-vault-open
+  rejected, directory target rejected.
+
+### Frontend layout
+
+- `src/types/markdown.ts` — `WikilinkRef = { target: string; alias: string | null; line: number }`.
+- `src/ipc/markdown.ts` — `extractWikilinks(path)` typed wrapper over
+  `ipcInvoke<WikilinkRef[]>("extract_wikilinks", { path })` that throws on
+  `AppError` rejection.
+- `src/hooks/useMarkdown.ts` — `useExtractWikilinks(path, { enabled })`
+  query keyed `["markdown", "wikilinks", path]`, 5s staleTime, mirrors
+  `useTreeChildren` and `useReadNote`. `wikilinksKey(path)` is exported
+  for invalidation by future mutations.
+- `src/__tests__/useMarkdown.test.tsx` — 4 tests: happy path (IPC called
+  with the right arg, returns the data), key derivation, `enabled: false`
+  skips the IPC, `AppError` rejection surfaces in `result.current.error`.
+
+### Known limitations (deferred)
+
+- **Wikilinks inside fenced code blocks are extracted as if live.** The
+  regex is paragraph-level; it does not respect triple-backtick fences or
+  inline-code backticks. The 2.1 contract is "extract everything"; a
+  polished pass that walks Markdown structure (either via
+  `pulldown-cmark` events or a fence-aware line scanner) lands with 2.4
+  (the click-to-jump render path), which is the first feature that would
+  visibly misbehave on a code-block match.
+- **Section refs `[[note#section]]` are kept as a single target string**
+  for 2.1. Splitting into `{name, section}` is a 2.2 (resolution) concern
+  because the spec rules around "missing section → broken link" depend on
+  resolution happening first.
+- **No debouncing.** `useExtractWikilinks` runs on demand. The watcher
+  (stage 3) will be the trigger that fires it on disk changes. Per spec
+  §6.4, the editor's 500ms autosave debounce is the only per-keystroke
+  gate.
 
 ## Database Schema
 

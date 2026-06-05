@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod error;
 pub mod fs;
+pub mod markdown;
 pub mod paths;
 pub mod settings;
 pub mod state;
@@ -27,6 +28,7 @@ pub fn run() {
             commands::tree::rename_note,
             commands::tree::read_note,
             commands::tree::write_note,
+            commands::markdown::extract_wikilinks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
