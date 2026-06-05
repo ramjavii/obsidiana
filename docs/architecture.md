@@ -46,20 +46,20 @@ obsidiana/
 │   ├── errors.ts                        # AppError TS discriminated union (5 variants, mirrors Rust)
 │   ├── hooks/
 │   │   ├── useFileTree.ts               # useTreeChildren + create/delete/rename mutations
-│   │   ├── useMarkdown.ts               # useExtractWikilinks(path) keyed by ["markdown","wikilinks",path] (2.1)
+│   │   ├── useMarkdown.ts               # useExtractWikilinks + useResolveWikilink (2.1, 2.2)
 │   │   ├── useNote.ts                   # useReadNote + useWriteNoteMutation (optimistic, rollback, tree invalidation) (1.5)
 │   │   ├── useToastStore.ts             # Zustand store + reportAppError() / reportError()
 │   │   └── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
 │   ├── ipc.ts                           # typed invoke() wrapper → IpcResult<T>
 │   ├── ipc/
-│   │   ├── markdown.ts                  # typed wrapper for extract_wikilinks (2.1)
+│   │   ├── markdown.ts                  # typed wrappers for extract_wikilinks (2.1) + resolve_wikilink (2.2)
 │   │   ├── note.ts                      # typed wrappers for read_note / write_note (1.5)
 │   │   ├── tree.ts                      # typed wrappers for list_tree / create_note / delete_note / rename_note
 │   │   └── vault.ts                     # typed wrappers for pick/open/close/list_recent
 │   ├── main.tsx                         # React 18 createRoot + QueryClient + ToastHost
 │   ├── styles.css                       # @tailwind base/components/utilities
 │   ├── types/
-│   │   ├── markdown.ts                  # WikilinkRef { target, alias, line } (2.1)
+│   │   ├── markdown.ts                  # WikilinkRef + ResolvedLink (tagged union) + ResolveWikilinkInput (2.1, 2.2)
 │   │   ├── note.ts                      # WriteResult (1.5)
 │   │   ├── tree.ts                      # TreeNode / TreeNodeKind / NoteContent / RenameReport
 │   │   └── vault.ts                     # VaultInfo / RecentVault / VaultStatus shapes
@@ -72,7 +72,7 @@ obsidiana/
 │       ├── VaultSwitcher.test.tsx       # toggle, recents, close-vault click
 │       ├── errors.test.ts               # isAppError, parseAppError, appErrorMessage (5 variants)
 │       ├── ipc.test.ts                  # ok / AppError rejection / wrapped Internal
-│       ├── useMarkdown.test.tsx         # useExtractWikilinks: IPC call, key, enabled=false, error surface (2.1)
+│       ├── useMarkdown.test.tsx         # useExtractWikilinks + useResolveWikilink: IPC call, key, enabled=false, error surface (2.1, 2.2)
 │       ├── useNote.test.tsx             # read cmd match, enabled skip, optimistic update, rollback on AppError (1.5)
 │       ├── useVault.test.tsx            # auto-open last vault, mutations reflect in status
 │       └── setup.tsx                    # mocks @tauri-apps/api/core + codemirror modules + renderWithProviders()
@@ -92,7 +92,7 @@ obsidiana/
 │   ├── src/
 │   │   ├── commands/
 │   │   │   ├── error_demo.rs           # ping_or_fail: dev-only error-surface fixture
-│   │   │   ├── markdown.rs              # extract_wikilinks (2.1)
+│   │   │   ├── markdown.rs              # extract_wikilinks (2.1) + resolve_wikilink (2.2)
 │   │   │   ├── mod.rs
 │   │   │   ├── ping.rs                  # smoke IPC command, returns "pong"
 │   │   │   ├── tree.rs                  # list_tree / create_note / delete_note / rename_note / read_note / write_note
@@ -102,11 +102,12 @@ obsidiana/
 │   │   │   ├── mod.rs
 │   │   │   ├── note.rs                  # create_note_in / delete_note_in / rename_note_in + NoteContent / RenameReport
 │   │   │   └── tree.rs                  # list_children + TreeNode / TreeNodeKind
-│   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + 13 handlers
+│   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + 14 handlers
 │   │   ├── main.rs                      # windows_subsystem = "windows" in release
 │   │   ├── markdown/
 │   │   │   ├── mod.rs
-│   │   │   ├── types.rs                 # WikilinkRef { target, alias, line }
+│   │   │   ├── resolve.rs               # resolve_wikilink + 19 unit tests (2.2)
+│   │   │   ├── types.rs                 # WikilinkRef + ResolvedLink enum
 │   │   │   └── wikilink.rs              # extract_wikilinks(&str) + 12 unit tests
 │   │   ├── paths.rs                     # app_data_dir, settings_path, canonicalize_dir, validate_relative_path
 │   │   ├── settings.rs                  # Settings + RecentVaultEntry + Theme, JSON, atomic write
@@ -115,6 +116,7 @@ obsidiana/
 │   └── tests/
 │       ├── ipc_smoke.rs                 # tauri::test::mock_app() + direct-call tests
 │       ├── markdown_extract.rs          # 8 mock_app() tests for extract_wikilinks (2.1)
+│       ├── markdown_resolve.rs          # 6 mock_app() tests for resolve_wikilink (2.2)
 │       ├── note_io.rs                   # 10 mock_app() tests for read_note / write_note (1.5)
 │       ├── tree_crud.rs                 # 20 mock_app() tests for all 4 tree commands + AppError paths
 │       └── vault_lifecycle.rs           # 16 mock_app() tests for all 4 vault commands + AppError paths
@@ -163,6 +165,9 @@ obsidiana/
 | 2026-06-05 | **Live Preview / Obsidian-like WYSIWYG editor is wanted in MVP (micro-features 2.5–2.7).** Markdown engine pick (2.5) → inline render pipeline for bold/italic/headings/code/links/resolved-wikilinks (2.6) → Source/Live Preview/Reading-view mode toggle (2.7). | The user reconsidered the original "Source mode only" deferral after dogfooding 1.5: rendered inline previews (with the cursor staying in source positions) are the core feel of an Obsidian-like workspace. The 3-mode toggle stays in MVP but ships last, after the render pipeline is solid. |
 | 2026-06-05 | **Editor focus is preserved across autosave.** The mount effect's dependency on `read.data` was over-eager: any data ref change (e.g., refetch on window focus, or the autosave cycle's own re-render) destroyed the CodeMirror `EditorView`, which lost focus. The fix: (a) `useReadNote` now sets `refetchOnWindowFocus: false` to stop the data ref from churning on focus, and (b) the editor's effect only destroys the view when the `path` actually changes — `viewPathRef` gates recreation, and external content updates flow through `view.dispatch({changes})` instead of a full teardown. | Refocusing after every 500ms autosave debounce was the most-felt UX regression in 1.5. Both fixes are independent and complementary: the first stops the trigger, the second is defense in depth in case `useReadNote` is invalidated for any other reason (manual `invalidateQueries`, an external watcher invalidation in stage 3, etc.). |
 | 2026-06-05 | **Embedded opencode terminal panel is deferred past MVP** (not part of the Local AI stack). | The user wants a dockable terminal inside the app shell that runs the `opencode` CLI with the vault as CWD and can read the active note + the file tree. Useful for in-app AI assistance and ad-hoc vault scripting. It is a developer-ergonomics feature, not an AI feature, so it lives in a separate deferred bucket from the Local AI stack. |
+| 2026-06-05 | **2.2 wikilink resolution: "shortest path" = fewest combined `..` + named-segment steps between the source dir and the candidate dir.** Distance is `up + down` from the longest common prefix. Ties broken by alphabetical order of the resolved path. | The spec says "shortest relative path from the source" (spec §6.2). Counting both upward and downward moves captures "how many directory hops" intuitively: a sibling is 2 (1 up + 1 down), a same-dir candidate is 0, and the source's own dir is the same as itself. Alphabetical tiebreak is deterministic and stable across re-orders. |
+| 2026-06-05 | **2.2 wikilink target shape: bare-name vs path-style split.** A target is path-style if it contains `/` (exact relative-path match; `.md`/`.markdown` appended when no extension is present). Otherwise it is a bare-name stem search (case-insensitive) across the whole vault. | Mirrors the Obsidian convention. The split is enforced at the top of `resolve::resolve_wikilink` and the `..`/absolute rejections are layered on top of `validate_relative_path` so a bad target string cannot escape the vault even via the resolver. |
+| 2026-06-05 | **2.2 `ResolvedLink` is a tagged enum (`resolved` \| `broken`)** instead of a flat struct with `Option<resolvedPath>`. | The TS discriminated union lets the consumer narrow on `kind` before reading `resolvedPath`, which is more idiomatic than a flat `Option` and keeps the JSON shape stable when we add more variants later (e.g. `Resolved` with a `sectionNotFound` flag in 2.4). |
 
 ## Toolchain
 
@@ -194,6 +199,7 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `read_note(path)` — returns `NoteContent` (`{path, content, modified_at}`) for a single note. UTF-8 validated; rejects missing files, directories, and non-`.md`/`.markdown` extensions. (micro-feature 1.5)
 - `write_note(path, content)` — overwrites (or creates) the note at `path` with `content`. Returns `WriteResult` (`{path, modified_at}`). Rejects missing parents, directory targets, and non-note extensions. (micro-feature 1.5)
 - `extract_wikilinks(path)` — reads the note at `path` and returns `Vec<WikilinkRef>` (`{target, alias, line}`) for every `[[note]]` / `[[note|alias]]` occurrence. Excludes embeds (`![[...]]`), skips empty targets, trims whitespace. Line numbers are 1-indexed. (micro-feature 2.1)
+- `resolve_wikilink(source_path, target, alias)` — returns a `ResolvedLink` tagged union (`resolved` or `broken`). The target is split on the first `#` to separate the note name from the section. The name is path-style (contains `/`) or bare-name (stem search, case-insensitive). When multiple notes share the same stem, the resolver picks the candidate with the shortest relative path from `source_path` (fewest combined `..` + down steps). Ties broken by alphabetical order of the resolved path. `resolved_path` is the candidate's relative path; `section` and `alias` are echoed back unmodified. Section existence is not validated in 2.2 — that lands in 2.4. (micro-feature 2.2)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 
@@ -551,6 +557,114 @@ the same module layout will host tag, embed, block-ref, and callout extractors.
   (stage 3) will be the trigger that fires it on disk changes. Per spec
   §6.4, the editor's 500ms autosave debounce is the only per-keystroke
   gate.
+
+## Wikilink resolution (micro-feature 2.2)
+
+Stage 2's second building block: a pure Rust resolver that maps a
+`[[note]]` (or `[[note|alias]]` / `[[note#Section]]`) to the
+file the link should open. Builds on the 2.1 extractor; no UI yet —
+the click-to-jump / broken-link styling surfaces in 2.4.
+
+### Resolution rules (matches `AGENTS.md` and spec §6.2)
+
+1. **Parse the target.** Trim. Split on the first `#` to separate
+   the note name from the section. Empty section is dropped; empty
+   name is rejected.
+2. **Reject escape attempts.** Targets containing `..`, starting with
+   `/`, or starting with `\` are rejected with `InvalidArgument`. The
+   same `validate_relative_path` gate used by the rest of the IPC
+   commands is re-applied so a malformed target cannot escape the
+   vault.
+3. **Classify the name.** Contains `/` → path-style. Otherwise →
+   bare-name stem search.
+4. **Find candidates.** Path-style: try the literal, the literal with
+   `.md`, the literal with `.markdown` (case-insensitive), each
+   validated to be a file inside the vault. Bare-name: enumerate every
+   `.md` / `.markdown` file under the vault (skipping hidden files
+   and dot-dirs); keep the ones whose stem matches
+   (case-insensitive).
+5. **Pick the shortest.** Distance between the source's directory
+   and the candidate's directory is the sum of `..` and named
+   segments in the relative path. Fewest hops wins. Ties broken by
+   alphabetical order of the candidate's full relative path.
+6. **Return** `ResolvedLink::Resolved` with the chosen path, or
+   `ResolvedLink::Broken` if no candidate matched. The section
+   and alias fields are echoed back from the input regardless of
+   resolved / broken. The section is not validated in 2.2.
+
+### Backend layout
+
+- `src-tauri/src/markdown/types.rs` — adds `ResolvedLink`
+  (`#[serde(tag = "kind", rename_all = "camelCase")]`) with
+  `Resolved { target, sourcePath, resolvedPath, section, alias }`
+  and `Broken { target, sourcePath, section, alias }`. camelCase
+  rename matches the 2.1 convention.
+- `src-tauri/src/markdown/resolve.rs` —
+  `pub fn resolve_wikilink(vault_root: &Path, source_path: &Path, target: &str, alias: Option<&str>) -> AppResult<ResolvedLink>`.
+  The function is a pure call into the filesystem: it walks the
+  vault tree, computes the shortest-path, and returns. Helpers
+  (`parent_dir_of`, `path_distance`, `is_candidate_visible`,
+  `try_path_style`, `try_bare_name`, `pick_shortest`) are
+  module-private and individually unit-tested. 19 unit tests
+  cover: helpers (extension, stem, distance, parent, visibility),
+  single-candidate resolution, zero-candidate broken, nearest-of-many
+  selection, alphabetical tiebreak, case-insensitive stem match,
+  path-style with auto `.md` extension, path-style with explicit
+  `.md`, path-style with `.markdown`, missing path-style target
+  → broken, section echoing on both Resolved and Broken, alias
+  echoing, empty target rejection, section-only `#Section`
+  rejection, `..` rejection, absolute path rejection, hidden
+  files ignored, and source-in-subfolder picking the closer sibling.
+- `src-tauri/src/commands/markdown.rs` — `resolve_wikilink_inner`
+  + `#[tauri::command] resolve_wikilink`. Inner takes
+  `tauri::State<'_, AppState>` so `mock_app()` tests can call it
+  without the IPC router. Validates `source_path` via
+  `validate_relative_path` before dispatching to the pure resolver.
+- `src-tauri/src/lib.rs` — registers `resolve_wikilink` in
+  `invoke_handler!`. Total handler count is now 14.
+- `src-tauri/tests/markdown_resolve.rs` — 6 `tauri::test::mock_app()`
+  integration tests: resolves existing target, broken for missing
+  target, no-vault-open → `InvalidArgument`, `..` source path →
+  `InvalidArgument`, absolute source path → `InvalidArgument`,
+  alias echoed back.
+
+### Frontend layout
+
+- `src/types/markdown.ts` — adds `ResolvedLink` (TS discriminated
+  union mirroring the Rust enum) and `ResolveWikilinkInput` (the
+  hook argument shape).
+- `src/ipc/markdown.ts` — adds `resolveWikilink(sourcePath, target, alias)`
+  typed wrapper over `ipcInvoke<ResolvedLink>("resolve_wikilink", { sourcePath, target, alias })`.
+  Throws on `AppError` rejection.
+- `src/hooks/useMarkdown.ts` — adds `useResolveWikilink(input, { enabled })`
+  query keyed `["markdown", "resolve", sourcePath, target, alias ?? null]`
+  and exports `resolveWikilinkKey(input)` for invalidation. 5s
+  staleTime; mirrors `useExtractWikilinks`.
+- `src/__tests__/useMarkdown.test.tsx` — adds a `useResolveWikilink`
+  describe block: 4 tests covering the happy path (IPC called with
+  the right args, returns the data), key derivation (target +
+  sourcePath + alias), `AppError` rejection surfaces in
+  `result.current.error`, and `enabled: false` skipping the IPC.
+
+### Known limitations (deferred)
+
+- **No SQLite cache.** Every `resolve_wikilink` re-walks the vault
+  tree. The link index arrives with stage 3 (and `useResolveWikilink`
+  is the natural caller to read from it). For 2.2 we keep the
+  contract simple: stateless, no concurrency, no cache. Acceptable
+  perf up to a few thousand notes per vault; 2.4 will set the
+  cache contract.
+- **No batch variant.** A `resolve_wikilinks` (plural) IPC that
+  resolves all targets of a single note in one round-trip is the
+  natural fit for 2.4's render path. 2.2 ships the singular; the
+  batch can land as an additive IPC without breaking the singular.
+- **No section existence check.** `ResolvedLink::Resolved { section: Some("Sec") }`
+  does not assert the resolved file actually has a `## Sec`
+  heading. That's a 2.4 concern (the click-to-jump surface is
+  the first place a wrong section visibly misbehaves).
+- **No codemirror / rendering integration.** The hook exists and
+  is tested; 2.3 (syntax highlighting) and 2.4 (click-to-jump,
+  broken-link styling) are the first callers.
 
 ## Database Schema
 

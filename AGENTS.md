@@ -101,6 +101,26 @@ without updating `docs/architecture.md` is incomplete.
   that exercises the success path and one that exercises the documented
   error path.
 
+## Wikilink Resolution
+
+- A wikilink target is **path-style** if it contains a `/` (exact
+  relative-path match; `.md` or `.markdown` appended when no extension
+  is present). Otherwise it is **bare-name** (stem search across the
+  whole vault, case-insensitive).
+- When multiple notes share the same stem (e.g. `idea.md` in `notes/`
+  and `archive/`), the resolver picks the candidate whose parent
+  directory is **shortest relative path from the source note's
+  directory** — i.e. the fewest combined up (`..`) and down (named
+  segment) steps. Ties broken by alphabetical order of the resolved
+  path. This rule is enforced by `markdown::resolve::resolve_wikilink`
+  and matches spec §6.2.
+- Section syntax `[[note#Section]]` is split on the first `#` at resolve
+  time. The `name` half follows the bare-name/path-style rules; the
+  `section` half is returned as a separate field and is **not
+  validated** in 2.2 (existence check is the consumer's job, and the
+  click-to-jump / Live Preview surfaces in 2.3–2.4 are the first
+  callers that would misbehave on a wrong section).
+
 ## Workflow Reminder
 
 For non-trivial code changes, the operating model is the `feature-loop`
