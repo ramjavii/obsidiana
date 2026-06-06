@@ -1,7 +1,8 @@
 use crate::error::AppResult;
 use crate::fs::note::read_note_in;
+use crate::markdown::render::render_markdown as render_markdown_inner_fn;
 use crate::markdown::resolve::resolve_wikilink as resolve_wikilink_inner_fn;
-use crate::markdown::types::{ResolvedLink, WikilinkRef};
+use crate::markdown::types::{RenderedNote, ResolvedLink, WikilinkRef};
 use crate::markdown::wikilink::extract_wikilinks as extract_wikilinks_from_content;
 use crate::paths::validate_relative_path;
 use crate::state::AppState;
@@ -52,4 +53,38 @@ pub async fn resolve_wikilink(
     state: State<'_, AppState>,
 ) -> AppResult<ResolvedLink> {
     resolve_wikilink_inner(state, source_path, target, alias)
+}
+
+pub fn render_markdown_inner(
+    state: State<'_, AppState>,
+    path: String,
+) -> AppResult<RenderedNote> {
+    let vault_root = require_vault_root(&state)?;
+    let relative = validate_relative_path(&path)?;
+    let note = read_note_in(&vault_root, &relative)?;
+    let source_path = relative;
+    let resolver = |target: &str| -> Option<String> {
+        resolve_wikilink_inner_fn(
+            &vault_root,
+            Path::new(&source_path),
+            target,
+            None,
+        )
+        .ok()
+        .and_then(|r| match r {
+            crate::markdown::types::ResolvedLink::Resolved { resolved_path, .. } => {
+                Some(resolved_path)
+            }
+            crate::markdown::types::ResolvedLink::Broken { .. } => None,
+        })
+    };
+    render_markdown_inner_fn(&note.content, resolver)
+}
+
+#[tauri::command]
+pub async fn render_markdown(
+    path: String,
+    state: State<'_, AppState>,
+) -> AppResult<RenderedNote> {
+    render_markdown_inner(state, path)
 }

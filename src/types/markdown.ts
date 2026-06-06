@@ -26,3 +26,31 @@ export type ResolveWikilinkInput = {
   sourcePath: string;
   alias?: string | null;
 };
+
+export type RenderedKind =
+  | { kind: "strong" }
+  | { kind: "emphasis" }
+  | { kind: "strikethrough" }
+  | { kind: "heading"; level: number }
+  | { kind: "codeInline" }
+  | { kind: "codeBlock" }
+  | { kind: "link" }
+  | { kind: "wikilinkResolved" };
+
+export type RenderedSpan = {
+  start: number;
+  end: number;
+  kind: RenderedKind;
+};
+
+export type RenderedBlockSpan = {
+  startLine: number;
+  endLine: number;
+  kind: RenderedKind;
+};
+
+export type RenderedNote = {
+  html: string;
+  inlineSpans: RenderedSpan[];
+  blockSpans: RenderedBlockSpan[];
+};

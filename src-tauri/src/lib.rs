@@ -30,6 +30,7 @@ pub fn run() {
             commands::tree::write_note,
             commands::markdown::extract_wikilinks,
             commands::markdown::resolve_wikilink,
+            commands::markdown::render_markdown,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,5 @@
 import { ipcInvoke } from "@/ipc";
-import type { ResolvedLink, WikilinkRef } from "@/types/markdown";
+import type { RenderedNote, ResolvedLink, WikilinkRef } from "@/types/markdown";
 
 export async function extractWikilinks(path: string): Promise<WikilinkRef[]> {
   const result = await ipcInvoke<WikilinkRef[]>("extract_wikilinks", { path });
@@ -17,6 +17,12 @@ export async function resolveWikilink(
     target,
     alias,
   });
+  if (!result.ok) throw result.error;
+  return result.value;
+}
+
+export async function renderMarkdown(path: string): Promise<RenderedNote> {
+  const result = await ipcInvoke<RenderedNote>("render_markdown", { path });
   if (!result.ok) throw result.error;
   return result.value;
 }

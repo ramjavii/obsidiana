@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn empty_input_returns_empty_html() {
-        let note = render_markdown("", &always_resolve).expect("render empty");
+        let note = render_markdown("", always_resolve).expect("render empty");
         assert_eq!(note.html, "");
         assert!(note.inline_spans.is_empty());
         assert!(note.block_spans.is_empty());
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn plain_text_renders_to_paragraph() {
-        let note = render_markdown("hello world", &never_resolve).expect("render");
+        let note = render_markdown("hello world", never_resolve).expect("render");
         assert!(note.html.contains("<p>hello world</p>"));
         assert!(note.inline_spans.is_empty());
         assert!(note.block_spans.is_empty());
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn bold_emits_strong_inline_span() {
         let src = "**bold**";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         assert_eq!(note.inline_spans.len(), 1);
         let span = &note.inline_spans[0];
         assert_eq!(span.kind, RenderedKind::Strong);
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn italic_emits_emphasis_inline_span() {
         let src = "*italic*";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         assert_eq!(note.inline_spans.len(), 1);
         let span = &note.inline_spans[0];
         assert_eq!(span.kind, RenderedKind::Emphasis);
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn heading_emits_heading_block_span_with_depth() {
         let src = "## h2";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         assert_eq!(note.block_spans.len(), 1);
         let block = &note.block_spans[0];
         assert_eq!(block.kind, RenderedKind::Heading(2));
@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn inline_code_emits_code_inline_span() {
         let src = "say `hi` please";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         assert_eq!(note.inline_spans.len(), 1);
         let span = &note.inline_spans[0];
         assert_eq!(span.kind, RenderedKind::CodeInline);
@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn fenced_code_block_emits_code_block_block_span_with_no_inline_spans_inside() {
         let src = "```\nline1\nline2\n```";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         assert_eq!(note.block_spans.len(), 1);
         let block = &note.block_spans[0];
         assert_eq!(block.kind, RenderedKind::CodeBlock);
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn link_emits_link_inline_span() {
         let src = "[x](https://example.com)";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         assert_eq!(note.inline_spans.len(), 1);
         let span = &note.inline_spans[0];
         assert_eq!(span.kind, RenderedKind::Link);
@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn resolved_wikilink_emits_wikilink_resolved_span() {
         let src = "see [[note]] here";
-        let note = render_markdown(src, &always_resolve).expect("render");
+        let note = render_markdown(src, always_resolve).expect("render");
         let span = note
             .inline_spans
             .iter()
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn broken_wikilink_emits_no_span() {
         let src = "see [[missing]] here";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         assert!(
             !note
                 .inline_spans
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn nested_strong_emphasis_emits_two_stacked_spans() {
         let src = "**bold *italic***";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         let kinds: Vec<_> = note.inline_spans.iter().map(|s| s.kind).collect();
         assert!(kinds.contains(&RenderedKind::Strong));
         assert!(kinds.contains(&RenderedKind::Emphasis));
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn script_tag_in_source_is_escaped_not_stripped() {
         let src = "hi <script>alert(1)</script> there";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         assert!(!note.html.contains("<script>"), "raw script tag must not appear");
         assert!(note.html.contains("&lt;script&gt;"));
         assert!(!note.html.contains("</script>"));
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn javascript_href_is_dropped() {
         let src = "[bad](javascript:alert(1))";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         assert!(!note.html.contains("javascript:"));
         assert!(!note.html.contains("alert(1)"));
     }
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn all_spans_have_valid_sorted_byte_ranges() {
         let src = "**a** *b* `c` [[d]]";
-        let note = render_markdown(src, &always_resolve).expect("render");
+        let note = render_markdown(src, always_resolve).expect("render");
         let mut last_end = 0;
         for span in &note.inline_spans {
             assert!(span.start <= span.end, "start <= end for {span:?}");
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn block_span_line_ranges_match_content() {
         let src = "# a\n\n```\nb\n```\n\n# c";
-        let note = render_markdown(src, &never_resolve).expect("render");
+        let note = render_markdown(src, never_resolve).expect("render");
         let headings: Vec<&RenderedBlockSpan> = note
             .block_spans
             .iter()

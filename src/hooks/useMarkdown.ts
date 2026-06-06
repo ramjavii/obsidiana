@@ -2,9 +2,25 @@ import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   extractWikilinks as extractWikilinksIpc,
+  renderMarkdown as renderMarkdownIpc,
   resolveWikilink as resolveWikilinkIpc,
 } from "@/ipc/markdown";
-import type { ResolvedLink, WikilinkRef } from "@/types/markdown";
+import type { RenderedNote, ResolvedLink, WikilinkRef } from "@/types/markdown";
+
+export const renderMarkdownKey = (path: string) =>
+  ["markdown", "render", path] as const;
+
+export function useRenderMarkdown(
+  path: string,
+  options?: { enabled?: boolean },
+) {
+  return useQuery<RenderedNote>({
+    queryKey: renderMarkdownKey(path),
+    queryFn: () => renderMarkdownIpc(path),
+    enabled: options?.enabled ?? true,
+    staleTime: 5_000,
+  });
+}
 
 export const wikilinksKey = (path: string) =>
   ["markdown", "wikilinks", path] as const;
