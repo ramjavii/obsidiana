@@ -62,6 +62,15 @@ vi.mock("@codemirror/state", () => ({
       return undefined;
     }
   },
+  RangeSetBuilder: class {
+    private items: unknown[] = [];
+    add(_from: number, _to: number, deco: unknown) {
+      this.items.push(deco);
+    }
+    finish() {
+      return { __isRangeSet: true, items: this.items };
+    }
+  },
 }));
 vi.mock("@codemirror/view", () => {
   class EditorView {
@@ -108,6 +117,9 @@ vi.mock("@codemirror/view", () => {
       cmLastDecorations.push({ from, to, spec: { ...spec } });
     }
     static mark(spec: { class?: string; attributes?: Record<string, string> }) {
+      return new Decoration(spec);
+    }
+    static line(spec: { class?: string; attributes?: Record<string, string> }) {
       return new Decoration(spec);
     }
     static none = { __isNone: true };
