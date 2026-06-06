@@ -2,7 +2,8 @@ use crate::error::AppResult;
 use crate::fs::note::read_note_in;
 use crate::markdown::render::render_markdown as render_markdown_inner_fn;
 use crate::markdown::resolve::resolve_wikilink as resolve_wikilink_inner_fn;
-use crate::markdown::types::{RenderedNote, ResolvedLink, WikilinkRef};
+use crate::markdown::tag::extract_tags as extract_tags_from_content;
+use crate::markdown::types::{RenderedNote, ResolvedLink, TagRef, WikilinkRef};
 use crate::markdown::wikilink::extract_wikilinks as extract_wikilinks_from_content;
 use crate::paths::validate_relative_path;
 use crate::state::AppState;
@@ -87,4 +88,22 @@ pub async fn render_markdown(
     state: State<'_, AppState>,
 ) -> AppResult<RenderedNote> {
     render_markdown_inner(state, path)
+}
+
+pub fn get_tags_for_note_inner(
+    state: State<'_, AppState>,
+    path: String,
+) -> AppResult<Vec<TagRef>> {
+    let vault_root = require_vault_root(&state)?;
+    let relative = validate_relative_path(&path)?;
+    let note = read_note_in(&vault_root, &relative)?;
+    Ok(extract_tags_from_content(&note.content))
+}
+
+#[tauri::command]
+pub async fn get_tags_for_note(
+    path: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<TagRef>> {
+    get_tags_for_note_inner(state, path)
 }

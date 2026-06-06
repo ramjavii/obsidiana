@@ -2,10 +2,12 @@ import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   extractWikilinks as extractWikilinksIpc,
+  getTagsForNote as getTagsForNoteIpc,
   renderMarkdown as renderMarkdownIpc,
   resolveWikilink as resolveWikilinkIpc,
 } from "@/ipc/markdown";
-import type { RenderedNote, ResolvedLink, WikilinkRef } from "@/types/markdown";
+import type { AppError } from "@/errors";
+import type { RenderedNote, ResolvedLink, TagRef, WikilinkRef } from "@/types/markdown";
 
 export const renderMarkdownKey = (path: string) =>
   ["markdown", "render", path] as const;
@@ -105,4 +107,19 @@ export function useWikilinkResolutionMap(
     });
     return map;
   }, [unique, queries]);
+}
+
+export const tagsForNoteKey = (path: string) =>
+  ["markdown", "tags", path] as const;
+
+export function useGetTagsForNote(
+  path: string,
+  options?: { enabled?: boolean },
+) {
+  return useQuery<TagRef[], AppError>({
+    queryKey: tagsForNoteKey(path),
+    queryFn: () => getTagsForNoteIpc(path),
+    enabled: options?.enabled ?? true,
+    staleTime: 5_000,
+  });
 }

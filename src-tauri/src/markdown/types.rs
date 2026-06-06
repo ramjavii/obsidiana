@@ -9,6 +9,13 @@ pub struct WikilinkRef {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TagRef {
+    pub name: String,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ResolvedLink {
     Resolved {

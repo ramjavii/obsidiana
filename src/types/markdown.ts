@@ -54,3 +54,12 @@ export type RenderedNote = {
   inlineSpans: RenderedSpan[];
   blockSpans: RenderedBlockSpan[];
 };
+
+export type TagRef = {
+  name: string;
+  line: number;
+};
+
+export type GetTagsInput = {
+  path: string;
+};

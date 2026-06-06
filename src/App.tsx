@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
 import { FileTree } from "@/components/FileTree";
 import { Editor } from "@/components/Editor";
+import { TagsPanel } from "@/components/TagsPanel";
 import { EditorModeToggle } from "@/components/EditorModeToggle";
 import { useVaultStatus } from "@/hooks/useVault";
 import { useEditorModeStore } from "@/hooks/useEditorModeStore";
@@ -134,6 +135,36 @@ function Shell() {
               <p className="text-sm">Select a file from the tree.</p>
             </div>
           )}
+        {selectedPath ? (
+          <aside
+            data-testid="right-pane"
+            className="w-64 shrink-0 border-l border-zinc-800"
+          >
+            <div role="tablist" className="flex border-b border-zinc-800 text-xs">
+              <button
+                type="button"
+                role="tab"
+                data-testid="tab-tags"
+                aria-selected="true"
+                className="flex-1 px-3 py-2 text-zinc-100 border-b-2 border-emerald-500"
+              >
+                Tags
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-testid="tab-backlinks"
+                aria-selected="false"
+                className="flex-1 px-3 py-2 text-zinc-500"
+                disabled
+                title="Backlinks panel lands in the next micro-feature"
+              >
+                Backlinks
+              </button>
+            </div>
+            <TagsPanel path={selectedPath} />
+          </aside>
+        ) : null}
         </section>
       </main>
     </div>
