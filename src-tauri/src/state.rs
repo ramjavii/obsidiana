@@ -1,9 +1,10 @@
 use crate::error::AppError;
+use crate::index::status::IndexStatus;
 use crate::settings::Settings;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 pub type SetupError = Box<dyn std::error::Error>;
@@ -17,6 +18,7 @@ pub struct VaultHandle {
 pub struct AppState {
     pub vault: Mutex<Option<VaultHandle>>,
     pub settings_path: PathBuf,
+    pub index: Arc<Mutex<IndexStatus>>,
 }
 
 impl AppState {
@@ -24,6 +26,7 @@ impl AppState {
         Self {
             vault: Mutex::new(None),
             settings_path,
+            index: Arc::new(Mutex::new(IndexStatus::missing())),
         }
     }
 
@@ -67,25 +70,29 @@ pub fn init_app_state(app: &tauri::App) -> Result<(), SetupError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn vault_info_uses_last_path_segment_as_name() {
-        let info = vault_info_from(&PathBuf::from("/home/me/notes"));
+        let info = vault_info_from(Path::new("/home/me/notes"));
         assert_eq!(info.name, "notes");
         assert_eq!(info.path, "/home/me/notes");
     }
 
     #[test]
     fn vault_info_falls_back_when_no_file_name() {
-        let info = vault_info_from(&PathBuf::from("/"));
+        let info = vault_info_from(Path::new("/"));
         assert_eq!(info.name, "vault");
     }
 
     #[test]
-    fn new_app_state_has_no_vault() {
+    fn new_app_state_has_no_vault_and_missing_index() {
         let state = AppState::new(PathBuf::from("/tmp/x.json"));
         let guard = state.vault.lock().expect("lock");
         assert!(guard.is_none());
+        let snap = state.index.lock().expect("index lock");
+        assert_eq!(
+            snap.state.state,
+            crate::index::status::IndexStateKind::Missing
+        );
     }
 }

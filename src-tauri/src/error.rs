@@ -24,6 +24,14 @@ pub enum AppError {
     Busy { what: String },
 }
 
+impl From<rusqlite::Error> for AppError {
+    fn from(err: rusqlite::Error) -> Self {
+        Self::Internal {
+            message: format!("sqlite: {err}"),
+        }
+    }
+}
+
 impl AppError {
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal {

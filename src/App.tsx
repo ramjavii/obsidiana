@@ -8,6 +8,7 @@ import { VaultSwitcher } from "@/components/VaultSwitcher";
 import { FileTree } from "@/components/FileTree";
 import { Editor } from "@/components/Editor";
 import { TagsPanel } from "@/components/TagsPanel";
+import { IndexStatusChip } from "@/components/IndexStatusChip";
 import { EditorModeToggle } from "@/components/EditorModeToggle";
 import { useVaultStatus } from "@/hooks/useVault";
 import { useEditorModeStore } from "@/hooks/useEditorModeStore";
@@ -105,6 +106,7 @@ function Shell() {
       <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
         <span className="text-sm font-semibold tracking-tight">OBSIDIANA</span>
         <VaultSwitcher vault={status.vault} />
+        <IndexStatusChip />
         {selectedPath && <EditorModeToggle />}
         {isDevMode() && <DevPanel />}
       </header>

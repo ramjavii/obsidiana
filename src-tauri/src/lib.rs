@@ -1,13 +1,33 @@
 pub mod commands;
 pub mod error;
 pub mod fs;
+pub mod index;
 pub mod markdown;
 pub mod paths;
 pub mod settings;
 pub mod state;
 
+fn init_logging() {
+    use log::{Level, LevelFilter, Metadata, Record};
+    struct StderrLogger;
+    impl log::Log for StderrLogger {
+        fn enabled(&self, m: &Metadata) -> bool {
+            m.level() <= Level::Warn
+        }
+        fn log(&self, record: &Record) {
+            if self.enabled(record.metadata()) {
+                eprintln!("[{}] {}: {}", record.level(), record.target(), record.args());
+            }
+        }
+        fn flush(&self) {}
+    }
+    let _ = log::set_logger(&StderrLogger);
+    log::set_max_level(LevelFilter::Warn);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    init_logging();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -33,6 +53,8 @@ pub fn run() {
             commands::markdown::resolve_wikilink,
             commands::markdown::render_markdown,
             commands::markdown::get_tags_for_note,
+            commands::index::index_status,
+            commands::index::rebuild_index,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
