@@ -457,7 +457,7 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
     });
   });
 
-  it("includes the inlineRender extension in the editor when livePreviewOn is true (2.6 default)", async () => {
+  it("includes the inlineRender extension in the editor when mode='livePreview' (2.7 default)", async () => {
     invokeMock.mockImplementation((cmd: unknown) => {
       if (cmd === "read_note") {
         return Promise.resolve({
@@ -479,7 +479,7 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
       <Editor
         path="hello.md"
         onClose={() => undefined}
-        livePreviewOn={true}
+        mode="livePreview"
       />,
       { wrapper: wrapperFactory() },
     );
@@ -495,7 +495,7 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
     });
   });
 
-  it("omits the inlineRender extension when livePreviewOn is false (2.6 ?lp=0)", async () => {
+  it("omits the inlineRender extension when mode='source'", async () => {
     invokeMock.mockImplementation((cmd: unknown) => {
       if (cmd === "read_note") {
         return Promise.resolve({
@@ -510,7 +510,7 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
       <Editor
         path="hello.md"
         onClose={() => undefined}
-        livePreviewOn={false}
+        mode="source"
       />,
       { wrapper: wrapperFactory() },
     );
@@ -524,5 +524,37 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
       });
       expect(hasInline).toBe(false);
     });
+  });
+
+  it("mounts the ReadingView and not the CodeMirror editor when mode='reading'", async () => {
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "# hi",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      if (cmd === "render_markdown") {
+        return Promise.resolve({
+          html: "<h1>hi</h1><p>body</p>",
+          inlineSpans: [],
+          blockSpans: [],
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(
+      <Editor
+        path="hello.md"
+        onClose={() => undefined}
+        mode="reading"
+      />,
+      { wrapper: wrapperFactory() },
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("reading-view")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("editor-container")).not.toBeInTheDocument();
   });
 });

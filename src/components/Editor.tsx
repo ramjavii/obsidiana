@@ -19,6 +19,7 @@ import {
   type WikilinkClickActions,
 } from "@/extensions/wikilinkHighlight";
 import { inlineRender } from "@/extensions/inlineRender";
+import { ReadingView } from "@/components/ReadingView";
 import { useReadNote, useWriteNoteMutation } from "@/hooks/useNote";
 import { reportError } from "@/hooks/useToastStore";
 import {
@@ -27,6 +28,7 @@ import {
   useWikilinkResolutionMap,
   wikilinkMapKey,
 } from "@/hooks/useMarkdown";
+import type { EditorMode } from "@/hooks/useEditorModeStore";
 import type { RenderedNote, ResolvedLink } from "@/types/markdown";
 
 type Status = "loading" | "idle" | "saving" | "saved" | "error";
@@ -36,7 +38,7 @@ type Props = {
   onClose: () => void;
   onJump?: (resolvedPath: string, section: string | null) => void;
   onBrokenClick?: (target: string, sourcePath: string, alias: string | null) => void;
-  livePreviewOn?: boolean;
+  mode?: EditorMode;
 };
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -55,7 +57,7 @@ export function Editor({
   onClose,
   onJump,
   onBrokenClick,
-  livePreviewOn = true,
+  mode = "livePreview",
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -79,8 +81,8 @@ export function Editor({
     livePreviewCompRef.current = new Compartment();
   }
   const mapRef = useRef<Map<string, ResolvedLink>>(new Map());
-  const livePreviewOnRef = useRef<boolean>(livePreviewOn);
-  livePreviewOnRef.current = livePreviewOn;
+  const modeRef = useRef<EditorMode>(mode);
+  modeRef.current = mode;
   const renderedRef = useRef<RenderedNote | null>(null);
 
   const [status, setStatus] = useState<Status>("loading");
@@ -90,8 +92,9 @@ export function Editor({
   const wikilinksQuery = useExtractWikilinks(path, { enabled: read.data !== undefined });
   const wikilinks = wikilinksQuery.data ?? [];
   const resolutionMap = useWikilinkResolutionMap(path, wikilinks);
+  const needsRender = mode === "livePreview" || mode === "reading";
   const renderedQuery = useRenderMarkdown(path, {
-    enabled: read.data !== undefined && livePreviewOn,
+    enabled: read.data !== undefined && needsRender,
   });
 
   mapRef.current = resolutionMap;
@@ -153,19 +156,33 @@ export function Editor({
     const view = viewRef.current;
     const comp = livePreviewCompRef.current;
     if (view === null || comp === null) return;
+    const renderForCm = modeRef.current === "livePreview";
     view.dispatch({
       effects: comp.reconfigure(
-        livePreviewOnRef.current
+        renderForCm
           ? inlineRender(() => renderedRef.current)
           : inlineRender(() => null),
       ),
     });
-  }, [renderedQuery.data, livePreviewOn]);
+  }, [renderedQuery.data, mode]);
 
   useEffect(() => {
     if (read.data === undefined) return;
     const container = containerRef.current;
     if (container === null) return;
+
+    if (modeRef.current === "reading") {
+      if (viewRef.current !== null) {
+        viewRef.current.destroy();
+        viewRef.current = null;
+        viewPathRef.current = null;
+      }
+      if (pendingTimeoutRef.current !== null) {
+        clearTimeout(pendingTimeoutRef.current);
+        pendingTimeoutRef.current = null;
+      }
+      return;
+    }
 
     pathRef.current = path;
 
@@ -225,7 +242,7 @@ export function Editor({
           wikilinkHighlight((target, alias) => readMap(mapRef.current, target, alias)),
         ),
         livePreviewComp.of(
-          livePreviewOnRef.current
+          modeRef.current === "livePreview"
             ? inlineRender(() => renderedRef.current)
             : inlineRender(() => null),
         ),
@@ -294,6 +311,7 @@ export function Editor({
     <div
       data-testid="editor"
       data-editor-path={path}
+      data-editor-mode={mode}
       className="flex h-full flex-col bg-zinc-950"
     >
       <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-2">
@@ -310,11 +328,18 @@ export function Editor({
           ×
         </button>
       </div>
-      <div
-        ref={containerRef}
-        data-testid="editor-container"
-        className="flex-1 overflow-hidden [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
-      />
+      {mode === "reading" ? (
+        <ReadingView
+          path={path}
+          html={renderedQuery.data?.html ?? ""}
+        />
+      ) : (
+        <div
+          ref={containerRef}
+          data-testid="editor-container"
+          className="flex-1 overflow-hidden [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
+        />
+      )}
     </div>
   );
 }

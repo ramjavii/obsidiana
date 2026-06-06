@@ -7,7 +7,9 @@ import { EmptyState } from "@/components/EmptyState";
 import { VaultSwitcher } from "@/components/VaultSwitcher";
 import { FileTree } from "@/components/FileTree";
 import { Editor } from "@/components/Editor";
+import { EditorModeToggle } from "@/components/EditorModeToggle";
 import { useVaultStatus } from "@/hooks/useVault";
+import { useEditorModeStore } from "@/hooks/useEditorModeStore";
 import {
   brokenWikilinkPath,
   useCreateNoteMutation,
@@ -34,11 +36,6 @@ async function pingOrFail(): Promise<string> {
 function isDevMode(): boolean {
   if (typeof window === "undefined") return false;
   return new URLSearchParams(window.location.search).get("dev") === "1";
-}
-
-function isLivePreviewOn(): boolean {
-  if (typeof window === "undefined") return true;
-  return new URLSearchParams(window.location.search).get("lp") !== "0";
 }
 
 function DevPanel() {
@@ -75,7 +72,7 @@ function Shell() {
   const { status } = useVaultStatus();
   const [selectedPath, setSelectedPath] = useState<string>("");
   const createMutation = useCreateNoteMutation();
-  const livePreviewOn = isLivePreviewOn();
+  const mode = useEditorModeStore((s) => s.mode);
 
   if (status.kind !== "open") return <EmptyState />;
 
@@ -107,6 +104,7 @@ function Shell() {
       <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
         <span className="text-sm font-semibold tracking-tight">OBSIDIANA</span>
         <VaultSwitcher vault={status.vault} />
+        {selectedPath && <EditorModeToggle />}
         {isDevMode() && <DevPanel />}
       </header>
       <main className="flex flex-1 overflow-hidden">
@@ -126,7 +124,7 @@ function Shell() {
               onClose={() => setSelectedPath("")}
               onJump={handleJump}
               onBrokenClick={handleBrokenClick}
-              livePreviewOn={livePreviewOn}
+              mode={mode}
             />
           ) : (
             <div
