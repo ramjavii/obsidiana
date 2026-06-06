@@ -2,7 +2,6 @@ import {
   useIndexStatus,
   useRebuildIndexMutation,
 } from "@/hooks/useIndexStatus";
-import { isBroken, isFailed } from "@/types/index";
 import type { IndexStatus } from "@/types/index";
 import { appErrorMessage } from "@/errors";
 
@@ -25,10 +24,16 @@ function labelFor(status: IndexStatus): string {
   switch (status.state) {
     case "missing":
       return "Index idle";
-    case "indexing":
-      return "Indexing…";
+    case "indexing": {
+      const indexed = status.indexed ?? 0;
+      const total = status.total ?? 0;
+      if (status.indexed === undefined || status.total === undefined) {
+        return "Indexing…";
+      }
+      return `Indexing ${indexed}/${total}`;
+    }
     case "ready":
-      return `Indexed · ${status.documentCount}`;
+      return `Indexed · ${status.documentCount} docs`;
     case "broken":
       return "Index corrupt — click to rebuild";
     case "failed":
@@ -40,10 +45,10 @@ function tooltipFor(status: IndexStatus): string | undefined {
   if (status.state === "ready") {
     return `schemaVer ${status.schemaVer}, last rebuilt ${status.lastRebuiltAt ?? "never"}`;
   }
-  if (isBroken(status)) {
+  if (status.state === "broken") {
     return `Quarantined to ${status.quarantinedTo}`;
   }
-  if (isFailed(status)) {
+  if (status.state === "failed") {
     return status.message;
   }
   return undefined;

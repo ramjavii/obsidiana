@@ -11,14 +11,17 @@ import { ToastHost } from "@/components/ToastHost";
 import { useToastStore } from "@/hooks/useToastStore";
 import type { IndexStatus } from "@/types/index";
 
-function makeStatus(overrides: Partial<IndexStatus> = {}): IndexStatus {
+function makeStatus<V extends IndexStatus["state"]>(
+  state: V,
+  shape: Partial<Omit<Extract<IndexStatus, { state: V }>, "state" | "schemaVer" | "documentCount" | "lastRebuiltAt">> = {},
+): Extract<IndexStatus, { state: V }> {
   return {
-    state: "ready",
+    state,
     schemaVer: 1,
     documentCount: 0,
     lastRebuiltAt: "2026-06-06T00:00:00Z",
-    ...overrides,
-  };
+    ...shape,
+  } as Extract<IndexStatus, { state: V }>;
 }
 
 function makeClient() {
@@ -33,7 +36,7 @@ describe("useIndexStatus", () => {
   });
 
   it("fires getIndexStatus IPC on mount", async () => {
-    const status = makeStatus({ documentCount: 7 });
+    const status = makeStatus("ready", { documentCount: 7 });
     invokeMock.mockImplementation((cmd) => {
       if (cmd === "index_status") return Promise.resolve(status);
       return Promise.resolve(null);
@@ -81,7 +84,7 @@ describe("useIndexStatus", () => {
 
   it("skips the IPC when enabled is false", async () => {
     invokeMock.mockImplementation((cmd) => {
-      if (cmd === "index_status") return Promise.resolve(makeStatus());
+      if (cmd === "index_status") return Promise.resolve(makeStatus("ready"));
       return Promise.resolve(null);
     });
     const client = makeClient();
@@ -109,7 +112,7 @@ describe("useRebuildIndexMutation", () => {
 
   it("invokes rebuild_index and calls invalidateQueries", async () => {
     invokeMock.mockImplementation((cmd) => {
-      if (cmd === "index_status") return Promise.resolve(makeStatus());
+      if (cmd === "index_status") return Promise.resolve(makeStatus("ready"));
       if (cmd === "rebuild_index") return Promise.resolve(null);
       return Promise.resolve(null);
     });
