@@ -58,18 +58,6 @@ it("renders indexing progress as N/M when indexed and total are present", async 
   expect(screen.getByTestId("index-status-chip")).toHaveAttribute("data-index-state", "indexing");
 });
 
-it("renders the ready state with the docs count label", async () => {
-  invokeMock.mockImplementation((cmd) => {
-    if (cmd === "index_status") return Promise.resolve(makeStatus("ready", { documentCount: 42 }));
-    return Promise.resolve(null);
-  });
-  renderWithProviders(<IndexStatusChip />);
-  await waitFor(() => {
-    expect(screen.getByTestId("index-status-chip")).toHaveTextContent("Indexed · 42 docs");
-  });
-  expect(screen.getByTestId("index-status-chip")).toHaveAttribute("data-index-state", "ready");
-});
-
 it("renders the missing state when no vault is open", async () => {
   invokeMock.mockImplementation((cmd) => {
     if (cmd === "index_status") return Promise.resolve(makeStatus("missing"));

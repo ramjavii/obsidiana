@@ -39,7 +39,9 @@ Core editor & linking:
     - [x] 2.5: pick markdown engine (ADR-001: Rust `markdown-rs`); ADR in `docs/architecture.md`
     - [x] 2.6: inline render pipeline — bold, italic, headings, inline code, fenced code, links, and resolved wikilinks render visually while the cursor stays in source positions
     - [x] 2.7: mode toggle in the editor chrome (Source / Live Preview / Reading view)
-- [ ] Tags `#parent/child` extracted and listed per note
+- [x] Tags `#parent/child` extracted and listed per note
+  - [x] 2.8: extract tags via Rust preprocessor (IPC: `get_tags_for_note`)
+  - [x] 2.8: tags displayed in the right-pane TagsPanel (chip strip with count, error, empty states)
 - [ ] Backlinks panel showing incoming links to the active note
 - [ ] Custom callouts / admonitions via Rust regex preprocessor
 - [ ] Note embeds `![[note#section]]` with recursion limit (3 levels)
@@ -47,9 +49,11 @@ Core editor & linking:
 
 Indexing & graph:
 
-- [ ] SQLite index of documents, connections, and tags
-- [ ] Debounced filesystem watcher (200 ms) keeping the index in sync
-- [ ] Real-time link refactor on file rename/move
+- [x] SQLite index of documents, connections, and tags
+  - [x] 3.1: schema migrations + handle + integrity check; `index_status` and `rebuild_index` IPC; status chip in the header (see `docs/architecture.md` for ADR notes)
+  - [x] 3.1.x: document/connection/tag ingestion from the existing preprocessor pipeline; indexer task kept in sync with vault opens
+  - [ ] 3.2: debounced filesystem watcher (200 ms) keeping the index in sync
+  - [ ] 3.3: real-time link refactor on file rename/move
 - [ ] Force-directed graph view (repulsion + link tension + gravity)
 - [ ] Local graph filter (N-hop neighborhood of the active note)
 - [ ] Label opacity fading on zoom
@@ -80,7 +84,13 @@ Explicitly out of MVP (deferred to a later stage):
 
 ## Current Stage
 
-`Current Stage: 2 — Markdown engine + linking`
+`Current Stage: 3 — SQLite index + watcher`
+
+The 3.1 micro-feature (schema + handle + status IPC + rebuild IPC) and
+3.1.x (ingestion engine wiring) are both shipped; 3.2 watcher and 3.3
+rename refactor are the remaining sub-features in this stage. The
+header status chip and the `index-rebuild` slash command are the
+user-visible surfaces of 3.1.
 
 ## Notes & Decisions
 
@@ -89,6 +99,7 @@ Explicitly out of MVP (deferred to a later stage):
 - The user has reconsidered the 3-mode editor. Obsidian-like Live Preview (inline render of bold, italic, headings, code, links, wikilinks) is wanted in MVP; a Source / Live Preview / Reading view toggle ships in micro-feature 2.7. Source mode is the only state in 1.5 and stays as a default fallback.
 - The markdown engine is still undecided. Live Preview (2.5–2.6) is the first feature that actually needs the engine; the decision is forced there.
 - Editor mode (2.7) is a single global session-only setting (Zustand in-memory, no persistence). Per-note mode persistence is a 2.7.x follow-up; the SQLite index is stage 3 work, so per-note mode is deferred alongside it. The `?lp=0` URL flag that was the temporary shim during 2.6 is gone as of 2.7 — the toggle in the editor chrome is the canonical control.
+- Indexer architecture (3.1): the snapshot the frontend polls is an in-memory `Arc<Mutex<IndexStatus>>` on `AppState`; the `rusqlite::Connection` is created and consumed only inside `tauri::async_runtime::spawn_blocking` so the IPC thread is never blocked on I/O. The handle is owned by the spawned task and dropped on completion, re-opening the DB on the next rebuild. The 2 s status poll is the chosen alternative to a Tauri event bus for 3.1; the watcher (3.2) is the first candidate to graduate to a real event stream.
 - Full-text search is deferred — only link and tag metadata is indexed in MVP.
 - Local AI (Ollama, Whisper, MCP server) and the plugin runtime are deferred past MVP, since they require heavier infra (local model hosting, sandboxing).
 - Embedded opencode terminal panel is deferred to a later stage (see "Explicitly out of MVP"). It is NOT a part of the Local AI stack — it is a developer-ergonomics feature for using opencode from inside the app against the user's vault.

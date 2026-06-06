@@ -35,13 +35,17 @@ obsidiana/
 ├── postcss.config.js
 ├── spec.md                              # technical spec
 ├── src/                                 # frontend (React 18 + TS strict + Tailwind)
-│   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher> + <EditorModeToggle>
+│   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher> + <EditorModeToggle> + right-pane tab strip (2.8)
 │   ├── components/
 │   │   ├── Editor.tsx                   # CodeMirror 6 wrapper: autosave 500ms, Ctrl/Cmd+S, status chip, close (1.5); mode prop (2.7)
 │   │   ├── EditorModeToggle.tsx         # 3-button Source / Live Preview / Reading view segmented control (2.7)
 │   │   ├── EmptyState.tsx               # "Open vault…" full-window view (first launch)
 │   │   ├── FileTree.tsx                 # recursive tree: expand dirs, right-click menu, select files
+│   │   ├── IndexStatusChip.tsx          # header chip with 5 visual states (missing/indexing/ready/broken/failed) + Rebuild button; 'Indexing N/M' and 'Indexed · N docs' labels (3.1.3, 3.1.x)
 │   │   ├── ReadingView.tsx              # sanitized-HTML read-only render via dangerouslySetInnerHTML (2.7)
+│   │   ├── TagChip.tsx                  # #name chip; button when onClick, span otherwise (2.8)
+│   │   ├── TagList.tsx                  # flex-wrap chip row with empty state (2.8)
+│   │   ├── TagsPanel.tsx                # right-pane panel: count + TagList + error state (2.8)
 │   │   ├── ToastHost.tsx                # global error/success/info toasts
 │   │   └── VaultSwitcher.tsx            # header pill: current vault + recents + close
 │   ├── extensions/
@@ -52,40 +56,48 @@ obsidiana/
 │   ├── hooks/
 │   │   ├── useEditorModeStore.ts        # Zustand store: EditorMode = source | livePreview | reading (2.7)
 │   │   ├── useFileTree.ts               # useTreeChildren + create/delete/rename mutations
-│   │   ├── useMarkdown.ts               # useExtractWikilinks + useResolveWikilink + useRenderMarkdown + useWikilinkResolutionMap (2.1, 2.2, 2.6)
+│   │   ├── useIndexStatus.ts            # useIndexStatus (2s polling) + useRebuildIndexMutation (3.1.3)
+│   │   ├── useMarkdown.ts               # useExtractWikilinks + useResolveWikilink + useRenderMarkdown + useWikilinkResolutionMap + useGetTagsForNote (2.1, 2.2, 2.6, 2.8)
 │   │   ├── useNote.ts                   # useReadNote + useWriteNoteMutation (optimistic, rollback, tree invalidation) (1.5)
 │   │   ├── useToastStore.ts             # Zustand store + reportAppError() / reportError()
 │   │   └── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
 │   ├── ipc.ts                           # typed invoke() wrapper → IpcResult<T>
 │   ├── ipc/
-│   │   ├── markdown.ts                  # typed wrappers for extract_wikilinks (2.1) + resolve_wikilink (2.2)
+│   │   ├── index.ts                     # typed wrappers for index_status / rebuild_index (3.1.3)
+│   │   ├── markdown.ts                  # typed wrappers for extract_wikilinks (2.1) + resolve_wikilink (2.2) + render_markdown (2.6) + get_tags_for_note (2.8)
 │   │   ├── note.ts                      # typed wrappers for read_note / write_note (1.5)
 │   │   ├── tree.ts                      # typed wrappers for list_tree / create_note / delete_note / rename_note
 │   │   └── vault.ts                     # typed wrappers for pick/open/close/list_recent
 │   ├── main.tsx                         # React 18 createRoot + QueryClient + ToastHost
-│   ├── styles.css                       # @tailwind base/components/utilities
+│   ├── styles.css                       # @tailwind base/components/utilities + .tag-chip
 │   ├── types/
-│   │   ├── markdown.ts                  # WikilinkRef + ResolvedLink (tagged union) + ResolveWikilinkInput (2.1, 2.2)
+│   │   ├── index.ts                     # IndexStatus (discriminated union; per-variant fields for indexing/broken/failed) + IndexStateKind (3.1.3, 3.1.x)
+│   │   ├── markdown.ts                  # WikilinkRef + ResolvedLink + RenderedNote + TagRef + GetTagsInput (2.1, 2.2, 2.6, 2.8)
 │   │   ├── note.ts                      # WriteResult (1.5)
 │   │   ├── tree.ts                      # TreeNode / TreeNodeKind / NoteContent / RenameReport
 │   │   └── vault.ts                     # VaultInfo / RecentVault / VaultStatus shapes
 │   └── __tests__/
-│       ├── App.test.tsx                 # EmptyState + Shell + sidebar + dev panel + ?dev=1 trigger + editor integration
+│       ├── App.test.tsx                 # EmptyState + Shell + sidebar + dev panel + ?dev=1 trigger + editor + right-pane TagsPanel + IndexStatusChip integration (1.1, 2.8, 3.1.3)
 │       ├── Editor.test.tsx              # render, autosave gate, error chip + toast, close, path-change destroys view (1.5)
 │       ├── EmptyState.test.tsx          # renders, click triggers pick_vault, surfaces error
 │       ├── FileTree.test.tsx            # expand/collapse, select, right-click menu, mutations
+│       ├── IndexStatusChip.test.tsx     # 6 tests: 5 visual states (missing/indexing/ready/broken/failed) + 'Indexing N/M' progress + Rebuild click (3.1.3, 3.1.x)
+│       ├── TagChip.test.tsx             # renders #name, button vs span, onClick forwarding (2.8)
+│       ├── TagList.test.tsx             # renders chips, empty state, custom empty text, onTagClick (2.8)
+│       ├── TagsPanel.test.tsx           # IPC fire, count, error, empty, data-tag-path (2.8)
 │       ├── ToastHost.test.tsx           # push, dismiss, auto-TTL, stacking
 │       ├── VaultSwitcher.test.tsx       # toggle, recents, close-vault click
 │       ├── errors.test.ts               # isAppError, parseAppError, appErrorMessage (5 variants)
 │       ├── ipc.test.ts                  # ok / AppError rejection / wrapped Internal
-│       ├── useMarkdown.test.tsx         # useExtractWikilinks + useResolveWikilink: IPC call, key, enabled=false, error surface (2.1, 2.2)
+│       ├── useMarkdown.test.tsx         # useExtractWikilinks + useResolveWikilink + useGetTagsForNote: IPC call, key, enabled=false, error surface (2.1, 2.2, 2.8)
+│       ├── useIndexStatus.test.tsx      # IPC fire on mount, enabled=false skip, 2s poll cadence, mutation invalidation + AppError toast (3.1.3)
 │       ├── wikilinkHighlight.test.ts    # regex match/alias/embed-exclusion/empty/newline cases (2.3)
 │       ├── useNote.test.tsx             # read cmd match, enabled skip, optimistic update, rollback on AppError (1.5)
 │       ├── useVault.test.tsx            # auto-open last vault, mutations reflect in status
 │       └── setup.tsx                    # mocks @tauri-apps/api/core + codemirror modules + renderWithProviders()
 ├── src-tauri/                           # backend (Rust 2021, Tauri 2)
 │   ├── .gitignore                       # gen/, target/, WixTools/
-│   ├── Cargo.toml                       # + tauri-plugin-dialog, dirs, chrono, regex, tempfile
+│   ├── Cargo.toml                       # + tauri-plugin-dialog, dirs, chrono, regex, tempfile, rusqlite (bundled), log, walkdir, blake3
 │   ├── build.rs
 │   ├── capabilities/
 │   │   └── default.json                 # core:default + dialog:default
@@ -99,31 +111,47 @@ obsidiana/
 │   ├── src/
 │   │   ├── commands/
 │   │   │   ├── error_demo.rs           # ping_or_fail: dev-only error-surface fixture
-│   │   │   ├── markdown.rs              # extract_wikilinks (2.1) + resolve_wikilink (2.2)
+│   │   │   ├── index.rs                # index_status / rebuild_index (3.1.2)
+│   │   │   ├── markdown.rs              # extract_wikilinks (2.1) + resolve_wikilink (2.2) + render_markdown (2.6) + get_tags_for_note (2.8)
 │   │   │   ├── mod.rs
 │   │   │   ├── ping.rs                  # smoke IPC command, returns "pong"
 │   │   │   ├── tree.rs                  # list_tree / create_note / delete_note / rename_note / read_note / write_note
-│   │   │   └── vault.rs                 # pick_vault / open_vault[/_force] / close_vault / list_recent_vaults
-│   │   ├── error.rs                     # AppError enum (5 variants) + helpers + unit tests
+│   │   │   └── vault.rs                 # pick_vault / open_vault[/_force] / close_vault / list_recent_vaults / get_open_vault
+│   │   ├── error.rs                     # AppError enum (5 variants) + helpers + unit tests + From<rusqlite::Error> (3.1.1)
 │   │   ├── fs/
 │   │   │   ├── mod.rs
 │   │   │   ├── note.rs                  # create_note_in / delete_note_in / rename_note_in + NoteContent / RenameReport
-│   │   │   └── tree.rs                  # list_children + TreeNode / TreeNodeKind
-│   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + 14 handlers
+│   │   │   └── tree.rs                  # list_children + TreeNode / TreeNodeKind + is_hidden / is_allowed_note (3.1.x)
+│   │   ├── index/
+│   │   │   ├── mod.rs                   # re-exports + submodules
+│   │   │   ├── schema.rs                # migrations + vault_meta + pragmas (3.1.1)
+│   │   │   ├── db.rs                    # open / quarantine / rebuild entry point (3.1.1)
+│   │   │   ├── status.rs                # IndexStatus snapshot + 5 state kinds + indexing(indexed,total) (3.1.1, 3.1.x)
+│   │   │   ├── extract.rs               # extract_title (H1 + fenced-code exclusion) + content_hash (blake3) (3.1.x)
+│   │   │   ├── ingest.rs                # scan_vault + index_file + ingest_all (transactional, on_progress, IngestReport) (3.1.x)
+│   │   │   └── kick_off.rs              # vault open kick-off + IPC thin wrapper; calls ingest_all after open (3.1.2, 3.1.x)
+│   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + 18 handlers + stderr Log impl
 │   │   ├── main.rs                      # windows_subsystem = "windows" in release
 │   │   ├── markdown/
 │   │   │   ├── mod.rs
+│   │   │   ├── render.rs                # render_markdown engine + source map (2.6)
 │   │   │   ├── resolve.rs               # resolve_wikilink + 19 unit tests (2.2)
-│   │   │   ├── types.rs                 # WikilinkRef + ResolvedLink enum
+│   │   │   ├── tag.rs                   # extract_tags + 12 unit tests (2.8)
+│   │   │   ├── types.rs                 # WikilinkRef + ResolvedLink + RenderedKind + RenderedNote + TagRef
 │   │   │   └── wikilink.rs              # extract_wikilinks(&str) + 12 unit tests
 │   │   ├── paths.rs                     # app_data_dir, settings_path, canonicalize_dir, validate_relative_path
 │   │   ├── settings.rs                  # Settings + RecentVaultEntry + Theme, JSON, atomic write
-│   │   └── state.rs                     # AppState { vault: Mutex<Option<VaultHandle>>, settings_path }
+│   │   └── state.rs                     # AppState { vault: Mutex<Option<VaultHandle>>, index: Arc<Mutex<IndexStatus>>, settings_path }
 │   ├── tauri.conf.json                  # identifier = "com.obsidiana.app"
 │   └── tests/
+│       ├── index_db.rs                  # 8 mock_app() tests for open / quarantine / rebuild (3.1.2)
+│       ├── index_ingest.rs              # 6 mock_app() tests for ingest_all: empty, three-notes, idempotent, drops-deleted, skips-unreadable, progress (3.1.x)
+│       ├── index_status.rs              # 7 mock_app() tests for index_status / rebuild_index (3.1.2)
 │       ├── ipc_smoke.rs                 # tauri::test::mock_app() + direct-call tests
 │       ├── markdown_extract.rs          # 8 mock_app() tests for extract_wikilinks (2.1)
+│       ├── markdown_render.rs           # 7 mock_app() tests for render_markdown (2.6)
 │       ├── markdown_resolve.rs          # 6 mock_app() tests for resolve_wikilink (2.2)
+│       ├── markdown_tags.rs             # 8 mock_app() tests for get_tags_for_note (2.8)
 │       ├── note_io.rs                   # 10 mock_app() tests for read_note / write_note (1.5)
 │       ├── tree_crud.rs                 # 20 mock_app() tests for all 4 tree commands + AppError paths
 │       └── vault_lifecycle.rs           # 16 mock_app() tests for all 4 vault commands + AppError paths
@@ -181,6 +209,12 @@ obsidiana/
 | 2026-06-05 | **2.7 Reading view is a separate `<ReadingView>` component, not a CodeMirror view.** | CodeMirror is the wrong tool for a read-only render: it is an interactive editor with cursor + selection + keymap. The reading view is a static `dangerouslySetInnerHTML` over the Rust-sanitized html from `render_markdown`, styled by a `.reading-view-body` CSS block. Mounting a separate React component is cheaper than fighting CodeMirror's "this is an editor" defaults. |
 | 2026-06-05 | **2.7 `<EditorModeToggle>` lives in `App.tsx`, not inside `<Editor>`.** | The toggle is a "what should the active note look like" control, not an editor-internal control. Keeping it in the header chrome (next to the vault switcher) makes the mode switch feel like a viewport-level choice. `<Editor>` is now a pure renderer driven by a `mode` prop, which keeps the editor's tests focused on the rendering surface. |
 | 2026-06-05 | **2.7 `?lp=0` URL flag is removed; the toggle is the only knob.** | The flag was a temporary shim during 2.6. The real control now exists. The flag is parsed but ignored (the default mode is `livePreview` regardless), so existing bookmarks keep working in the sense that the editor still opens. Documented in `MVP.md` and `spec.md` as a clean break. |
+| 2026-06-06 | **2.8 right-pane layout is established once with two tabs (Tags active, Backlinks disabled).** | Creating the slot now means the right-pane ship happens once. The Backlinks tab is a disabled placeholder; the next micro-feature (after stage 3's connections index) is a BacklinksPanel component that wires into the existing tab. No layout refactor needed when Backlinks lands. The right pane is mounted only when a note is selected, matching the conditional pattern of `<EditorModeToggle />`. |
+| 2026-06-06 | **3.1 SQLite index: bundled `rusqlite` (`features = ["bundled"]`)** instead of system `libsqlite3-sys`. | The bundled feature ships a known-good SQLite matching the `rusqlite` crate's compiled version. Host-native devs don't have to install `libsqlite3-dev`/`brew install sqlite3`, and the Docker dev image doesn't need the system library. The `bundled` build is ~1.1 MB and ships inside the Tauri binary, so the runtime cost is the same on every host. |
+| 2026-06-06 | **3.1 indexer snapshot lives on `AppState` as `Arc<Mutex<IndexStatus>>`**; the `rusqlite::Connection` itself is created inside `tauri::async_runtime::spawn_blocking` and dropped on completion. | The snapshot is what the frontend polls; it must be lockable from the IPC thread. The `Connection` is non-`Send` and not safe to share across threads, so it cannot sit in `AppState`. Spawning a one-shot blocking task that owns the `Connection` and writes the new snapshot back through the `Arc<Mutex<...>>` on completion is the simplest pattern that respects the lifetime rules. Rebuild reopens the DB on the next call. |
+| 2026-06-06 | **3.1 status sync is a 2s frontend polling loop, not a Tauri event bus.** The status query has `refetchInterval: 2000` and pauses when the browser tab is hidden. | The watcher (3.2) is the first feature that needs push notifications; that is the right place to introduce the event bus. For 3.1 the snapshot only changes on vault open / user-triggered rebuild, and a 2s poll is cheap (`Arc<Mutex<>>` read + JSON serialize). When 3.2 lands, `useIndexStatus` will switch to `useTauriEvent` and the polling code can be deleted. |
+| 2026-06-06 | **3.1 corrupt or unopenable `index.db` is quarantined to `<vault>/.obsidiana/index.db.broken-<unix-ts>` and a fresh DB is created.** The `quarantinedTo` path is exposed on the `IndexStatus::Broken` variant so the UI can surface it. | Matches the spec §6.2 "never crash on bad index" rule. The user always has a chance to inspect / recover the broken file, and the app keeps working. A `Failed` variant covers the case where the quarantine itself fails (e.g., the `.obsidiana/` dir is read-only) so the chip can show a clear error message instead of looping. |
+| 2026-06-06 | **3.1 IPC handlers are generic over `tauri::Runtime`** (`pub fn index_status_inner<R: tauri::Runtime>(app: &tauri::AppHandle<R>, ...)`) so `tauri::test::mock_app()` with `MockRuntime` can call them directly. The async wrappers in `lib.rs` pin `tauri::Wry`. | The mock-app pattern from 1.2+ expects every command's `*_inner` helper to accept the `AppHandle<MockRuntime>` for direct tests, while the production handler dispatches with the concrete `Wry` runtime. Generics with a trait bound on `Runtime` satisfy both without a separate test-only code path. |
 
 ## Toolchain
 
@@ -215,6 +249,9 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `resolve_wikilink(source_path, target, alias)` — returns a `ResolvedLink` tagged union (`resolved` or `broken`). The target is split on the first `#` to separate the note name from the section. The name is path-style (contains `/`) or bare-name (stem search, case-insensitive). When multiple notes share the same stem, the resolver picks the candidate with the shortest relative path from `source_path` (fewest combined `..` + down steps). Ties broken by alphabetical order of the resolved path. `resolved_path` is the candidate's relative path; `section` and `alias` are echoed back unmodified. Section existence is not validated in 2.2 — that lands in 2.4. (micro-feature 2.2)
 - *no new IPC in 2.3* — the wikilink syntax highlighter is purely a frontend `CodeMirror` `MatchDecorator` + `ViewPlugin` extension (`src/extensions/wikilinkHighlight.ts`). It decorates `[[note]]` and `[[note|alias]]` ranges with a `cm-wikilink cm-wikilink-unresolved` CSS class. Embeds (`![[…]]`) are excluded via a JavaScript lookbehind. No IPC call is made per keystroke; resolve-time styling lands in 2.4 when the link index from stage 3 is available. (micro-feature 2.3)
 - *no new IPC in 2.7* — the editor mode toggle is a purely frontend concern: a Zustand store (`useEditorModeStore`) holds the `EditorMode` enum, a `<EditorModeToggle>` segmented control writes to it, and `<Editor mode={...} />` reads from it. The `render_markdown` IPC from 2.6 is the only IPC the toggle indirectly affects (enabled when `mode === "livePreview" || mode === "reading"`; disabled when `mode === "source"`). The Rust backend is unchanged from 2.6.
+- `get_tags_for_note(path)` — reads the note at `path` and returns `Vec<TagRef>` (`{name, line}`) for every `#name` occurrence. The tag's `#` must be at start-of-input or preceded by whitespace, `(`, or `[`; the name itself matches `[A-Za-z0-9_/-]+` (supports nested `parent/child` tags). Line numbers are 1-indexed. Per-note, per-line dedup is enforced in the extractor; cross-note aggregation is a stage 3 concern. (micro-feature 2.8)
+- `index_status` — returns the current `IndexStatus` snapshot: `{ state: "missing" | "indexing" | "ready" | "broken" | "failed", schemaVer, documentCount, lastRebuiltAt, ... }`. The "indexing" variant carries `indexed: number | null` and `total: number | null` (live progress from the `ingest_all` `on_progress` callback); the "broken" variant carries `quarantinedTo: string`; the "failed" variant carries `message: string`. The snapshot lives on `AppState.index: Arc<Mutex<IndexStatus>>` and is safe to call when no vault is open (returns `Missing`). (micro-feature 3.1.2; payload enriched in 3.1.x)
+- `rebuild_index` — drops any existing `<vault>/.obsidiana/index.db`, reopens the connection, runs the schema migrations, and runs the `ingest_all` engine to repopulate `documents` / `connections` / `tags`. The snapshot flips to `Indexing` with live `(indexed, total)` updates from the `on_progress` callback, then to `Ready` (or `Failed` on error) when the transaction commits. Returns `Ok(())` on success; `AppError::Busy` if a rebuild is already in flight; `AppError::InvalidArgument` if no vault is open. (micro-feature 3.1.2; ingest wired in 3.1.x)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 
@@ -1147,6 +1184,176 @@ The `?lp=0` URL flag is gone; the toggle is the only knob.
   look like" control, not a global setting; showing it
   unconditionally would be misleading.
 
+## Tags extraction (micro-feature 2.8)
+
+The first stage-2 item past the Live Preview / Reading view
+toggle: tags are extracted from a note and listed in a
+right-pane panel. Mirrors the 2.1 wikilink-extract pattern
+(pure Rust regex extractor + IPC handler + frontend hook +
+TanStack Query). The right pane is established once with
+two tabs (Tags active, Backlinks disabled placeholder); the
+Backlinks implementation lands after stage 3's connections
+index.
+
+### Backend layout
+
+- `src-tauri/src/markdown/tag.rs` (new) — `pub fn
+  extract_tags(content: &str) -> Vec<TagRef>`. Regex
+  `(?:^|[\s(\[])#([A-Za-z0-9_/-]+)`: the `#` is anchored
+  to start-of-input or a non-word boundary (whitespace,
+  `(`, or `[`); the name itself supports alphanumeric,
+  underscore, hyphen, and slash (for nested `parent/child`
+  tags). Line numbers are 1-indexed, computed by counting
+  newlines in the byte prefix. 12 unit tests cover: empty
+  input; single tag at start; tag after whitespace; multiple
+  on one line; line number tracking; nested `parent/child`;
+  list marker `- [ ]`; tag inside parens; mid-word `#`
+  rejected; empty tag body rejected; YAML frontmatter
+  (documented as live-text over-match); hex color standalone
+  (documented as live-text over-match).
+- `src-tauri/src/markdown/types.rs` — adds `TagRef { name,
+  line }` with `#[serde(rename_all = "camelCase")]`.
+- `src-tauri/src/markdown/mod.rs` — declares `pub mod tag;`.
+- `src-tauri/src/commands/markdown.rs` — adds
+  `get_tags_for_note_inner` + `#[tauri::command]
+  get_tags_for_note`. Inner takes `tauri::State<'_, AppState>`
+  so `mock_app()` tests can call it without the IPC router.
+  Validates the path through `require_vault_root` →
+  `validate_relative_path` → `read_note_in` → `extract_tags`,
+  the same gate sequence the wikilink commands established.
+- `src-tauri/src/lib.rs` — registers the 16th handler.
+- `src-tauri/tests/markdown_tags.rs` (new) — 8
+  `tauri::test::mock_app()` integration tests: empty note,
+  single tag, nested `parent/child`, line tracking, per-note
+  dedup, `..` rejected, missing file rejected, no vault
+  open rejected.
+
+### Frontend layout
+
+- `src/types/markdown.ts` — adds `TagRef` (`{name, line}`)
+  and `GetTagsInput` (`{path}`). camelCase keys; the hook
+  argument shape is exported for future call sites.
+- `src/ipc/markdown.ts` — adds `getTagsForNote(path)`
+  wrapper that throws on `AppError` rejection. Same
+  pattern as `extractWikilinks`.
+- `src/hooks/useMarkdown.ts` — adds `useGetTagsForNote(path,
+  {enabled})` query keyed `["markdown", "tags", path]`,
+  5s staleTime, typed `useQuery<TagRef[], AppError>` so
+  `query.error` narrows to `AppError` and the inline
+  `appErrorMessage(query.error)` call in `TagsPanel`
+  typechecks under `noUncheckedIndexedAccess` +
+  `exactOptionalPropertyTypes`. Exports
+  `tagsForNoteKey(path)` for invalidation.
+- `src/components/TagChip.tsx` (new) — presentational
+  chip. `onClick` switches the element between `<button>`
+  and `<span>`. The `onClick` prop is typed
+  `((name: string) => void) | undefined` to satisfy
+  `exactOptionalPropertyTypes`. `data-testid={`tag-chip-${name}`}`
+  is stable across re-renders.
+- `src/components/TagList.tsx` (new) — flex-wrap row of
+  chips with an empty state (`data-testid="tag-list-empty"`).
+  The `key` is `${name}-${line}` so the same tag on
+  multiple lines shows as multiple chips (line-tracked).
+- `src/components/TagsPanel.tsx` (new) — right-pane
+  panel. Header: `Tags` title + count (`data-testid="tags-count"`).
+  Body: `TagList` on success, inline error (`data-testid="tags-error"`)
+  on `AppError`. The panel also exposes the path via
+  `data-tags-path` for tests and the future tag-search
+  wiring.
+- `src/App.tsx` — the right pane (`data-testid="right-pane"`)
+  is mounted only when a note is selected, matching the
+  conditional pattern of `<EditorModeToggle />`. The pane
+  has two tabs: `Tags` (active, with the emerald underline
+  matching the spec's `<RightPane>` model at `spec.md:177`)
+  and `Backlinks` (disabled, with a `title` tooltip
+  explaining when it ships). The `<TagsPanel>` body is
+  the active tab's content; the Backlinks body is a
+  follow-up.
+- `src/styles.css` — one rule, `.tag-chip`, sets
+  `user-select: none` and `font-variant-numeric:
+  tabular-nums`. The visible styling is in the Tailwind
+  class string in `TagChip.tsx` (slate-800 bg, slate-300
+  text, slate-700 hover).
+
+### Tests
+
+- `src/__tests__/useMarkdown.test.tsx` — adds the
+  `useGetTagsForNote` describe block (4 tests: happy path,
+  key derivation, `enabled: false` skip, `AppError` surface).
+- `src/__tests__/TagChip.test.tsx` (new) — 4 tests:
+  `#name` rendering, `data-testid` matching, button vs span
+  based on `onClick`, click handler forwarding.
+- `src/__tests__/TagList.test.tsx` (new) — 4 tests: chip
+  rendering, empty state, custom empty text, `onTagClick`
+  forwarding.
+- `src/__tests__/TagsPanel.test.tsx` (new) — 5 tests: IPC
+  fire on mount, count display, empty state, error state,
+  `data-tags-path` attribute.
+- `src/__tests__/App.test.tsx` — adds an end-to-end test
+  that opens a note and asserts `data-testid="right-pane"`,
+  `data-testid="tab-tags"`, `data-testid="tab-backlinks"`,
+  the `get_tags_for_note` IPC fired with the right path,
+  and the chip rows rendered.
+
+### Decision row (2.8)
+
+- **Tag character class is `[A-Za-z0-9_/-]+`, ASCII only.**
+  Matches Obsidian's core convention for nested
+  `parent/child` tags. Unicode letter support would need
+  a line-state-machine parser (the `regex` crate's unicode
+  word-boundary has gaps); a 2.8.x follow-up can add it
+  if it bothers users.
+- **Tag dedup is per-note, per-line.** The IPC returns one
+  `TagRef` per `(name, line)` pair. Cross-note aggregation
+  lives in stage 3's `tags` table (`spec.md:87-94`); the
+  2.8 IPC is the source of truth that the future watcher
+  will populate the table from. The 2.8 dedup test
+  (`get_tags_for_note_dedupes_within_a_single_note`)
+  documents the per-line behavior explicitly.
+- **Right-pane layout is established once with two tabs.**
+  The Backlinks tab is a disabled placeholder; creating
+  the slot here means the right-pane ship happens once,
+  and the next micro-feature (after stage 3) is a
+  BacklinksPanel component that wires into the existing
+  tab. No layout refactor needed when Backlinks lands.
+- **`useGetTagsForNote` is typed `useQuery<TagRef[],
+  AppError>`.** The TError is set explicitly so the
+  inline `appErrorMessage(query.error)` call in
+  `TagsPanel` typechecks under `noUncheckedIndexedAccess`
+  + `exactOptionalPropertyTypes`. The other markdown
+  hooks (`useExtractWikilinks`, `useResolveWikilink`,
+  `useRenderMarkdown`) inherit TanStack Query's default
+  `TError = Error`; they are only consumed via the
+  global `QueryClient.onError` toast, which uses
+  `isAppError` to narrow. The TagsPanel inline error
+  branch needs the explicit type because it surfaces
+  the error in the chrome, not via the toast.
+- **Tag click is a no-op in 2.8.** The chip's
+  `onClick` exists in the API for forward-compat with
+  the future search box (`spec.md:20`), but no consumer
+  wires it. The search box itself is a stage 3 / 2.8.x
+  follow-up.
+
+### Known limitations (deferred)
+
+- **Tags inside fenced code blocks are extracted as live
+  text.** Same trade-off as 2.1 / 2.3. A fence-aware
+  extractor is a 2.8.x follow-up.
+- **Hex colors like `#FFFFFF` after a space are matched.**
+  Documented in
+  `hex_color_standalone_is_matched_as_tag_known_limitation`.
+- **YAML frontmatter tags are extracted as live text.**
+  The MVP does not ship a frontmatter parser
+  (`docs/architecture.md:1305` lists this as open); 2.8
+  treats the frontmatter block as plain Markdown.
+- **No tag highlighting in the editor.** The 2.8
+  extractor is right-pane only; an editor-side
+  `MatchDecorator` (matching the 2.3 wikilink pattern) is
+  a 2.8.x follow-up.
+- **No tag autocomplete in the editor.** CodeMirror
+  autocomplete is not yet in the editor's `extensions`
+  array. Follow-up.
+
 ## ADR-001: Markdown engine for Live Preview and Reading view
 
 - **Status:** Accepted, 2026-06-05.
@@ -1225,12 +1432,184 @@ The `?lp=0` URL flag is gone; the toggle is the only knob.
   - **JS `remark-parse` + `unified` in a Web Worker** — rejected;
     see Decision drivers (1), (4), (5).
 
-## Database Schema
+## SQLite index (micro-feature 3.1)
 
-See `spec.md` §3. Tables: `documents`, `connections`, `tags`, `vault_meta`.
-Index lives at `<vault>/.obsidiana/index.db` and is gitignored.
+Stage 3 of MVP starts here. 3.1 ships the index foundation: the
+schema migrations, the SQLite handle, the corruption guard, the
+status snapshot the frontend polls, and the user-triggered rebuild
+IPC. Ingestion (3.1.x: hooking the wikilink / tag extractors into
+the indexer task), the `notify` filesystem watcher (3.2), and the
+rename refactor (3.3) are the follow-ups that fill the index with
+real data. Until 3.1.x lands, the rebuilt DB is empty after
+migrations; the chip correctly shows `ready` with
+`documentCount: 0`.
 
-Schema migrations land with stage 3.
+The index is a **cache**, not a source of truth. The Markdown files
+on disk remain authoritative; a broken / missing index is never
+fatal — the file tree, editor, and wikilink resolver all keep
+working without it. This is the "never crash on bad index" rule
+from spec §6.2, enforced by the quarantine path described below.
+
+### Database Schema
+
+The on-disk file is `<vault>/.obsidiana/index.db` (WAL mode,
+`foreign_keys = ON`, `synchronous = NORMAL`). Tables (see `spec.md`
+§3 for the full contract):
+
+- **`vault_meta`** — singleton row keyed by `id = 1`
+  (`schema_ver INTEGER`, `opened_at DATETIME`).
+- **`documents`** — `(id INTEGER PRIMARY KEY AUTOINCREMENT, file_path
+  TEXT UNIQUE NOT NULL, title TEXT NOT NULL, last_modified DATETIME
+  NOT NULL DEFAULT CURRENT_TIMESTAMP, frontmatter_json TEXT NULL)`.
+  `file_path` is the relative path from the vault root; `title` is
+  either the H1 (if present) or the filename without `.md`. The
+  `resolved_target_id` foreign key on `connections` references
+  `documents.id`. `frontmatter_json` is reserved for a later slice —
+  the column is created nullable but not yet written.
+- **`connections`** — `(source_id INTEGER NOT NULL, target_path TEXT
+  NOT NULL, resolved_target_id INTEGER NULL, kind TEXT NOT NULL,
+  block_id TEXT NULL, PRIMARY KEY (source_id, target_path, block_id))`.
+  `source_id` FK to `documents.id` ON DELETE CASCADE;
+  `resolved_target_id` FK to `documents.id` ON DELETE SET NULL. A
+  wikilink in `a.md` to `b.md` is one row (the resolution to `b.md`'s
+  `id` is performed by a future slice — `resolved_target_id` stays
+  `NULL` for now).
+- **`tags`** — `(document_id INTEGER NOT NULL, tag_name TEXT NOT
+  NULL, PRIMARY KEY (document_id, tag_name))`. FK to `documents.id`
+  ON DELETE CASCADE. Per-note, per-tag dedup matches what the
+  extractor returns (the extractor is per-note, not per-line; the
+  per-line dedup is only meaningful when the extractor changes
+  shape).
+- **`sqlite_schema`** is whatever `rusqlite` needs.
+
+Migrations live in `src-tauri/src/index/schema.rs` as a
+`migrations()` function returning `Vec<&'static str>`. They run
+inside a `rusqlite::Transaction` in `user_version` order and the
+final migration sets `PRAGMA user_version = N` and the
+`vault_meta.schema_ver` row. A newer `schema_ver` on disk
+re-quarantines the file (matches the "never open a file with a
+schema ahead of the binary" rule).
+
+### Backend layout
+
+- `src-tauri/Cargo.toml` — adds `rusqlite = { version = "0.32",
+  features = ["bundled"] }` and `log = "0.4"`.
+- `src-tauri/src/index/mod.rs` — module root; re-exports
+  `IndexStatus`, `kick_off_index_open`, `reset_index_status`.
+- `src-tauri/src/index/schema.rs` — `pub fn migrations() ->
+  Vec<&'static str>` returning the ordered DDL strings. Unit tests
+  cover: tables created, migrations are idempotent, `user_version`
+  advances, reject-newer-schema raises `AppError::NotFound` (the
+  quarantine path in `db::open` catches it), `vault_meta` is
+  singleton.
+- `src-tauri/src/index/db.rs` — `open(vault_root) -> AppResult<Connection>`
+  and `rebuild(vault_root) -> AppResult<()>`. `open` applies the
+  pragmas (`journal_mode = WAL`, `foreign_keys = ON`, `synchronous =
+  NORMAL`), ensures `.obsidiana/` exists, runs migrations, and
+  quarantines any open failure to `<vault>/.obsidiana/index.db.broken-<unix-ts>`
+  before retrying once. The returned `quarantined_to: Option<PathBuf>`
+  is propagated up to `IndexStatus::Broken` for the UI.
+- `src-tauri/src/index/status.rs` — `IndexStatus` struct with
+  `#[serde(rename_all = "camelCase")]` and a `state: IndexStateKind`
+  discriminator (`Missing | Indexing | Ready | Broken { quarantined_to }
+  | Failed { message }`). Every variant carries `schema_ver: u32`,
+  `document_count: u64`, `last_rebuilt_at: Option<u64>`. Unit tests
+  pin the JSON shape for all 5 states.
+- `src-tauri/src/index/kick_off.rs` — `kick_off_index_open` (called
+  from the vault open async wrapper) and `reset_index_status`
+  (called from close). The kick-off spawns a `tauri::async_runtime::spawn_blocking`
+  task that owns the `Connection`, runs migrations, and writes the
+  resulting `IndexStatus` back into the `Arc<Mutex<>>` on `AppState`.
+  Generic over `tauri::Runtime` so `tauri::test::mock_app()` with
+  `MockRuntime` can drive it.
+- `src-tauri/src/commands/index.rs` — `index_status_inner` and
+  `rebuild_index_inner` plus async wrappers. `rebuild` is guarded
+  by a `tokio::sync::Mutex` so a second concurrent call returns
+  `AppError::Busy`. Rebuild reopens the DB through the same `db::open`
+  path, so a corrupt file during rebuild is quarantined exactly the
+  same way as on vault open.
+- `src-tauri/src/commands/vault.rs` — the async `open_vault` and
+  `open_vault_force` wrappers call `kick_off_index_open` after the
+  active vault is recorded in `AppState`. `close_vault` calls
+  `reset_index_status`. The sync `*_inner` helpers are unchanged
+  so existing tests still drive them.
+- `src-tauri/src/error.rs` — adds `From<rusqlite::Error> for
+  AppError` mapping to `AppError::Io { path: "<sqlite>", source: e.to_string() }`.
+- `src-tauri/src/lib.rs` — adds `pub mod index;`, registers the 2
+  new handlers (18 total), and wires a 10-line stderr `Log` impl
+  (Warn+) so the `log` macros inside the indexer actually print
+  something during development.
+- `src-tauri/src/state.rs` — `AppState` gains
+  `pub index: Arc<Mutex<IndexStatus>>` (defaults to
+  `IndexStatus::missing()`).
+- `src-tauri/tests/index_db.rs` — 8 `tauri::test::mock_app()` tests
+  for `kick_off_index_open`, `rebuild_index`, `reset_index_status`,
+  and the corrupt-DB quarantine path.
+- `src-tauri/tests/index_status.rs` — 7 `tauri::test::mock_app()`
+  tests for the `index_status` and `rebuild_index` IPC commands
+  (success and error paths).
+
+### Frontend layout
+
+- `src/types/index.ts` — `IndexStateKind` ("missing" | "indexing" |
+  "ready" | "broken" | "failed"), `IndexStatus` (the union with
+  `state` as discriminator and the variant-specific fields
+  `quarantinedTo` / `message`), plus `isBroken` / `isFailed` type
+  guards. Mirrors the Rust shape (camelCase).
+- `src/ipc/index.ts` — typed `getIndexStatus()` /
+  `rebuildIndex()` wrappers that throw on `AppError` rejection.
+- `src/hooks/useIndexStatus.ts` — `useIndexStatus({ enabled })` is a
+  TanStack Query with `queryKey: ["index", "status"]`,
+  `refetchInterval: 2000`, `refetchIntervalInBackground: false`,
+  and `enabled` driven by vault open. `useRebuildIndexMutation()`
+  calls `rebuildIndex()` and invalidates the status query on
+  success. `onError` surfaces `AppError` via `reportAppError`.
+- `src/components/IndexStatusChip.tsx` — header chip with 5 visual
+  states: `missing` (gray, "Index"), `indexing` (gray, "Index…"),
+  `ready` (green, "Indexed · N docs"), `broken` (rose, "Index broken"
+  with a Rebuild button), `failed` (rose, "Index failed" with
+  tooltip containing the error message and a Rebuild button). The
+  Rebuild button calls `useRebuildIndexMutation`. `isError` from
+  the query renders an "Index unknown" chip with the error message
+  as the tooltip.
+- `src/App.tsx` — mounts `<IndexStatusChip />` in the header
+  chrome next to the vault switcher, inside the `Shell` branch
+  (so it only appears when a vault is open).
+- `src/__tests__/IndexStatusChip.test.tsx` — 5 tests, one per
+  visual state, plus the Rebuild click and the error tooltip.
+- `src/__tests__/useIndexStatus.test.tsx` — 6 tests: fires
+  `getIndexStatus` IPC on mount, skips when `enabled: false`,
+  mutation calls `rebuild_index` and invalidates the status query,
+  mutation surfaces `AppError` via toast, polling cadence via fake
+  timers, error chip when `useIndexStatus` query fails.
+- `src/__tests__/App.test.tsx` — new test confirms the chip mounts
+  and fires `getIndexStatus` when a vault is open.
+
+### What's NOT in 3.1 (deferred to 3.1.x / 3.2 / 3.3)
+
+- **Document / connection / tag ingestion.** ~~The rebuild IPC reopens
+  the DB and runs migrations, but the indexer task does NOT yet
+  walk the vault and populate `documents` / `connections` / `tags`.~~
+  ~~3.1.x hooks the existing preprocessor pipeline (wikilink + tag
+  extractors) into the indexer so a rebuild produces real rows.
+  Until then, `documentCount: 0` is the correct number.~~
+  **Shipped in 3.1.x** (see the dedicated section below).
+- **`notify` filesystem watcher.** External edits and the user's
+  own autosaves do not invalidate the index. 3.2 adds the watcher,
+  debounced at 200 ms, and the first consumer of the Tauri event
+  bus (replacing the 2s polling loop with a push).
+- **Rename refactor.** Moving / renaming a note in the tree does
+  not yet update `connections.source_path` or
+  `connections.target_path` rows. 3.3 wires the `rename_note` IPC
+  into the indexer transaction.
+- **Local graph filter, label opacity fading, graph view itself.**
+  Stage 4.
+- **`index-rebuild` slash command** (already in `opencode.json`)
+  only invokes `index_status`; the actual rebuild IPC call is a
+  follow-up after 3.1.x.
+- **Tauri event bus.** 2 s polling is the chosen MVP-shape for
+  status sync; the watcher (3.2) is the first feature that forces
+  the move to events.
 
 ## Polish pass (B1, B2, B5)
 
@@ -1301,6 +1680,133 @@ guard directly. No more `as` cast; the type is narrowed by the guard.
   object (`{ kind: "NotFound" }` without `data`) does NOT call
   `reportAppError`. The pre-existing "AppError rejection DOES call
   reportAppError" test still passes under the new guard.
+
+## Indexer ingestion (micro-feature 3.1.x)
+
+3.1 shipped the SQLite foundation: schema migrations, handle,
+quarantine path, and the two IPC commands (`index_status` /
+`rebuild_index`) that drive an in-memory `IndexStatus` snapshot.
+3.1.x fills the index with real data. The `index_status` and
+`rebuild_index` commands are now backed by an `ingest_all` engine
+that walks the vault, opens a single transaction, `DELETE FROM
+documents` (CASCADE cleans `connections` and `tags`), and
+re-extracts every note using the existing `markdown::wikilink::extract_wikilinks`
+and `markdown::tag::extract_tags` preprocessors. The
+`on_progress` callback updates the in-memory snapshot so the IPC
+status payload carries live `indexed` / `total` counts while
+indexing is in flight. After the transaction commits, the
+snapshot is re-derived from the DB (`status_from_db`) so the
+`document_count` and `last_rebuilt_at` are authoritative.
+
+### Decision row (3.1.x)
+
+| Question | Answer | Why |
+| --- | --- | --- |
+| Per-file vs whole-vault transaction? | Whole-vault, single transaction. | A consistent snapshot is the whole point of an index. Per-file transactions would let a half-built index be observable to a concurrent reader. The single tx is the simplest correct design for the MVP. |
+| Truncate-then-insert vs `INSERT OR REPLACE` per file? | `DELETE FROM documents` once, then `INSERT OR REPLACE` per file. | CASCADE on the FKs does the row-level cleanup. Re-inserting the same `file_path` is naturally idempotent thanks to the `UNIQUE` constraint; `INSERT OR REPLACE` makes the in-tx upsert race-free. |
+| Skip re-extraction via `content_hash`? | Not in 3.1.x. | The `content_hash` column was originally planned in 3.1 but is not in the shipped schema (the actual `documents` table is `id` + `file_path` + `title` + `last_modified` + `frontmatter_json` only). Adding it is a real schema migration and a future-micro-feature call. Today's whole-vault rebuild is fast enough on real-world vaults (a few thousand notes) that the optimization isn't needed yet. |
+| Extract tags per-line or per-note? | Per-note. | The existing `extract_tags` preprocessor returns a flat `Vec<TagRef>` per note (one per `#tag` occurrence). The PK `(document_id, tag_name)` collapses duplicates at the SQL layer via `INSERT OR IGNORE`. Per-line dedup is a follow-up if the extractor ever surfaces line numbers. |
+| Error handling for unreadable files? | Log `warn!` and skip. | One bad file (non-UTF-8, permission denied) must not abort a vault-wide ingest. The `IngestReport::files_skipped` counter lets the UI surface the count later if needed. |
+| Walkdir `filter_entry` vs post-filter? | `filter_entry`. | Hidden subtrees (`.obsidiana/`, `.trash/`, `.git/`, etc.) are excluded from the walk entirely, so we never `read_to_string` them. A post-filter would only catch the immediate file name and would have to know about the parent's basename. |
+| `Indexing` JSON shape: nested vs flat? | Flat. | `indexed` and `total` live at the top level of the JSON (`{"state": "indexing", "indexed": 3, "total": 10, ...}`), not under a `{"indexing": {...}}` key. The Rust shape is `Indexing` as a unit enum variant + `indexed: Option<u64>` / `total: Option<u64>` as optional fields on the parent `IndexState` struct, with `#[serde(skip_serializing_if = "Option::is_none")]` so the four non-Indexing states don't carry a `"indexed": null`. |
+| Schema path-keyed vs id-keyed? | Id-keyed (already shipped). | The schema has been id-keyed since 3.1 (`documents.id` PK + FKs from `connections.source_id` / `tags.document_id`). The "path-keyed vs id-keyed" risk from the 3.1.x plan was a misremembering; no schema migration is needed. |
+
+### Backend layout
+
+- `src-tauri/Cargo.toml` — adds `walkdir = "2"` and `blake3 = "1"`.
+- `src-tauri/src/index/extract.rs` (new) — `pub fn extract_title(&str) -> String`
+  (H1 with fenced-code exclusion, filename fallback) and
+  `pub fn content_hash(&str) -> String` (blake3 hex digest; not yet
+  written to the DB, kept here so a future schema migration can
+  adopt it without re-plumbing). 16 unit tests.
+- `src-tauri/src/index/ingest.rs` (new) — `pub fn scan_vault(&Path) ->
+  AppResult<Vec<PathBuf>>` (walkdir + `filter_entry` skips hidden
+  subtrees) and `pub fn index_file(&Path, &Path) -> AppResult<IndexedFile>`
+  (per-file read + extract, returns `DocumentRow` + `Vec<ConnectionRow>`
+  + `Vec<TagRow>`). The new `pub fn ingest_all(&Connection, &Path,
+  impl FnMut(u64, u64)) -> AppResult<IngestReport>` is the engine
+  this micro-feature ships. 9 unit tests for the helpers; 6
+  integration tests in `tests/index_ingest.rs` for the engine.
+- `src-tauri/src/index/mod.rs` — re-exports `extract`, `ingest`, plus
+  the existing `db`, `status`, `kick_off`.
+- `src-tauri/src/index/status.rs` — `IndexStatus::indexing(indexed,
+  total)` constructor added; `Indexing` variant is unit
+  (was previously a struct variant with `indexed` / `total`); the
+  parent `IndexState` struct gains `indexed: Option<u64>` and
+  `total: Option<u64>` with `#[serde(skip_serializing_if = "Option::is_none")]`
+  so the JSON shape is flat (`{"state": "indexing", "indexed": 3,
+  "total": 10, ...}`).
+- `src-tauri/src/index/kick_off.rs` — `kick_off_index_open` now
+  calls `IndexDb::open` then `ingest_all` in the same
+  `spawn_blocking` task. The `on_progress` callback updates the
+  in-memory `Arc<Mutex<IndexStatus>>` snapshot to
+  `IndexStatus::indexing(indexed, total)` after every indexed
+  file. The same pattern is mirrored in `commands/index.rs::rebuild_index_inner`
+  (after `IndexDb::rebuild`).
+- `src-tauri/src/fs/tree.rs` — exposes `pub fn is_hidden(&Path) -> bool`
+  and `pub fn is_allowed_note(&Path) -> bool` (the existing tree
+  filter is reused by the indexer so the two cannot drift).
+- `src-tauri/tests/index_ingest.rs` (new) — 6 integration tests:
+  empty vault, three notes with wikilinks + tags, idempotency under
+  repeat runs, drops documents for files removed between runs,
+  skips unreadable files and continues, progress callback fires
+  `(1, total)` ... `(total, total)`.
+
+### Frontend layout
+
+- `src/types/index.ts` — `IndexStatus` is now a proper discriminated
+  union: shared fields (`schemaVer`, `documentCount`, `lastRebuiltAt`)
+  on the root, per-variant fields (`indexed` / `total` on
+  `indexing`, `quarantinedTo` on `broken`, `message` on `failed`).
+  Removes the now-redundant `isBroken` / `isFailed` type guards —
+  TS narrows on the `state` discriminator for free.
+- `src/components/IndexStatusChip.tsx` — `indexing` state now
+  renders `Indexing N/M` when `indexed` and `total` are present
+  (falls back to `Indexing…` when absent). `ready` state renders
+  `Indexed · N docs`. The `tooltipFor` helper narrows `broken` and
+  `failed` directly on the union (no more `isBroken` / `isFailed`
+  call).
+- `src/__tests__/IndexStatusChip.test.tsx` — 2 new tests:
+  `indexing` renders `Indexing 3/10` when `indexed` + `total` are
+  present; `ready` renders `Indexed · 42 docs`. The existing
+  `indexing` test (no progress) and the 4 state tests are updated
+  to use the new state-first generic helper
+  `makeStatus<V>(state, shape)` (TS narrows the variant via
+  `Extract<IndexStatus, { state: V }>`).
+- `src/__tests__/useIndexStatus.test.tsx` — `makeStatus` helper is
+  updated to the state-first generic form so the type of each
+  test's `status` matches the variant it claims to exercise.
+
+### Tests added
+
+- 16 unit tests in `src-tauri/src/index/extract.rs` (H1 / fenced-
+  code / filename fallback for `extract_title`; 6 fixture
+  vectors for `content_hash`).
+- 9 unit tests in `src-tauri/src/index/ingest.rs` (`scan_vault`
+  + `index_file`).
+- 6 integration tests in `src-tauri/tests/index_ingest.rs`
+  (described above).
+- 2 frontend tests in `src/__tests__/IndexStatusChip.test.tsx`
+  (indexing N/M, ready · docs).
+
+### What's NOT in 3.1.x (deferred to 3.2 / 3.3)
+
+- **`notify` filesystem watcher.** 3.2. The 2 s status polling
+  loop is still the only path that surfaces indexer state to the
+  frontend.
+- **Rename refactor.** 3.3. Moving / renaming a note does not yet
+  update `connections.source_id` (rows for the old `file_path`
+  are gone because of the CASCADE, but the rows for the new
+  `file_path` are only produced by the next rebuild).
+- **`content_hash`-based skip re-extraction.** Not on the schema
+  yet. Whole-vault rebuild remains fast enough for real-world
+  vaults.
+- **WAL checkpoint on close.** A long-running session accumulates
+  WAL frames. A checkpoint on `close_vault_inner` is a small
+  follow-up.
+- **Tauri event bus.** 2 s polling remains the MVP-shape for
+  status sync; the watcher (3.2) is the first feature that forces
+  the move to events.
 
 ## Open Questions / Backlog
 
