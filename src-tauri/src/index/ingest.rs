@@ -65,8 +65,6 @@ pub struct DocumentRow {
     pub file_path: String,
     pub title: String,
     pub last_modified: i64,
-    pub content_hash: String,
-    pub size: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +88,118 @@ pub struct IndexedFile {
     pub tags: Vec<TagRow>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct IngestReport {
+    pub documents_indexed: u64,
+    pub connections_extracted: u64,
+    pub tags_extracted: u64,
+    pub files_skipped: u64,
+    pub duration_ms: u64,
+}
+
+pub fn ingest_all(
+    conn: &rusqlite::Connection,
+    root: &Path,
+    mut on_progress: impl FnMut(u64, u64),
+) -> AppResult<IngestReport> {
+    use std::time::Instant;
+    let start = Instant::now();
+    let files = scan_vault(root)?;
+    let total = files.len() as u64;
+    let mut report = IngestReport {
+        documents_indexed: 0,
+        connections_extracted: 0,
+        tags_extracted: 0,
+        files_skipped: 0,
+        duration_ms: 0,
+    };
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| AppError::internal(format!("begin transaction: {e}")))?;
+
+    conn.execute("DELETE FROM documents", [])
+        .map_err(|e| AppError::internal(format!("truncate documents: {e}")))?;
+
+    for (i, file) in files.iter().enumerate() {
+        let indexed = match index_file(root, file) {
+            Ok(idx) => idx,
+            Err(e) => {
+                log::warn!(
+                    "ingest: skipping {}: {e}",
+                    file.display()
+                );
+                report.files_skipped += 1;
+                on_progress(i as u64, total);
+                continue;
+            }
+        };
+
+        conn.execute(
+            "INSERT OR REPLACE INTO documents (file_path, title, last_modified) VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                indexed.document.file_path,
+                indexed.document.title,
+                indexed.document.last_modified
+            ],
+        )
+        .map_err(|e| {
+            AppError::internal(format!(
+                "insert document {}: {e}",
+                indexed.document.file_path
+            ))
+        })?;
+        let doc_id: i64 = conn
+            .query_row(
+                "SELECT id FROM documents WHERE file_path = ?1",
+                rusqlite::params![indexed.document.file_path],
+                |r| r.get(0),
+            )
+            .map_err(|e| {
+                AppError::internal(format!(
+                    "lookup document id for {}: {e}",
+                    indexed.document.file_path
+                ))
+            })?;
+
+        for c in &indexed.connections {
+            conn.execute(
+                "INSERT OR IGNORE INTO connections (source_id, target_path, kind, block_id) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![doc_id, c.target_path, c.kind, c.block_id],
+            )
+            .map_err(|e| {
+                AppError::internal(format!(
+                    "insert connection {} -> {}: {e}",
+                    indexed.document.file_path, c.target_path
+                ))
+            })?;
+        }
+        for t in &indexed.tags {
+            conn.execute(
+                "INSERT OR IGNORE INTO tags (document_id, tag_name) VALUES (?1, ?2)",
+                rusqlite::params![doc_id, t.name],
+            )
+            .map_err(|e| {
+                AppError::internal(format!(
+                    "insert tag {} #{}: {e}",
+                    indexed.document.file_path, t.name
+                ))
+            })?;
+        }
+
+        report.documents_indexed += 1;
+        report.connections_extracted += indexed.connections.len() as u64;
+        report.tags_extracted += indexed.tags.len() as u64;
+        on_progress(report.documents_indexed, total);
+    }
+
+    tx.commit()
+        .map_err(|e| AppError::internal(format!("commit transaction: {e}")))?;
+
+    report.duration_ms = start.elapsed().as_millis() as u64;
+    Ok(report)
+}
+
 pub fn index_file(root: &Path, file: &Path) -> AppResult<IndexedFile> {
     let meta = std::fs::metadata(file)
         .map_err(|e| AppError::from_io(file.display().to_string(), &e))?;
@@ -108,8 +218,7 @@ pub fn index_file(root: &Path, file: &Path) -> AppResult<IndexedFile> {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let size = meta.len() as i64;
-    let hash = content_hash(&content);
+    let _ = content_hash(&content);
 
     let mut connections: Vec<ConnectionRow> = Vec::new();
     for wl in extract_wikilinks(&content) {
@@ -134,8 +243,6 @@ pub fn index_file(root: &Path, file: &Path) -> AppResult<IndexedFile> {
             file_path: rel,
             title,
             last_modified,
-            content_hash: hash,
-            size,
         },
         connections,
         tags,
@@ -260,15 +367,13 @@ mod tests {
     }
 
     #[test]
-    fn index_file_returns_document_row_with_title_and_hash() {
+    fn index_file_returns_document_row_with_title() {
         let tmp = make_vault();
         write(tmp.path(), "idea.md", "# My idea\n\nbody [[other]]\n");
         let file = tmp.path().join("idea.md");
         let indexed = index_file(tmp.path(), &file).expect("index");
         assert_eq!(indexed.document.file_path, "idea.md");
         assert_eq!(indexed.document.title, "My idea");
-        assert!(!indexed.document.content_hash.is_empty());
-        assert!(indexed.document.size > 0);
     }
 
     #[test]

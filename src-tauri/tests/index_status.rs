@@ -55,9 +55,11 @@ fn index_status_serialization_uses_state_discriminator() {
 #[test]
 fn index_status_indexing_state_serializes_correctly() {
     use obsidiana_lib::index::status::IndexStatus;
-    let s = IndexStatus::indexing();
+    let s = IndexStatus::indexing(3, 10);
     let value = serde_json::to_value(&s).expect("serialize");
     assert_eq!(value["state"], "indexing");
+    assert_eq!(value["indexed"], 3);
+    assert_eq!(value["total"], 10);
 }
 
 #[test]

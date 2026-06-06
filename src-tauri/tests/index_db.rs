@@ -129,7 +129,10 @@ fn rebuild_index_flips_to_indexing_then_ready() {
     let handle = app.handle().clone();
     let state = app.state::<AppState>();
     index::rebuild_index_inner(handle, state).expect("rebuild ok");
-    assert_eq!(snapshot_state(&app), IndexStateKind::Indexing);
+    assert!(matches!(
+        snapshot_state(&app),
+        IndexStateKind::Indexing
+    ));
     assert!(wait_for(
         || snapshot_state(&app) == IndexStateKind::Ready,
         Duration::from_secs(5),

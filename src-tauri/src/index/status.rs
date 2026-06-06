@@ -18,6 +18,10 @@ pub enum IndexStateKind {
 pub struct IndexState {
     pub state: IndexStateKind,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub indexed: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub quarantined_to: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
@@ -46,10 +50,12 @@ impl IndexStatus {
         }
     }
 
-    pub fn indexing() -> Self {
+    pub fn indexing(indexed: u64, total: u64) -> Self {
         Self {
             state: IndexState {
                 state: IndexStateKind::Indexing,
+                indexed: Some(indexed),
+                total: Some(total),
                 ..Default::default()
             },
             schema_ver: 0,
@@ -76,6 +82,7 @@ impl IndexStatus {
                 state: IndexStateKind::Broken,
                 quarantined_to: Some(quarantined_to.into()),
                 message: None,
+                ..Default::default()
             },
             schema_ver: 0,
             document_count: 0,
@@ -87,8 +94,8 @@ impl IndexStatus {
         Self {
             state: IndexState {
                 state: IndexStateKind::Failed,
-                quarantined_to: None,
                 message: Some(message.into()),
+                ..Default::default()
             },
             schema_ver: 0,
             document_count: 0,
@@ -117,15 +124,19 @@ mod tests {
         assert_eq!(v["state"], "missing");
         assert_eq!(v["schemaVer"], 0);
         assert_eq!(v["documentCount"], 0);
+        assert!(v.get("indexed").is_none());
+        assert!(v.get("total").is_none());
         assert!(v.get("quarantinedTo").is_none());
         assert!(v.get("message").is_none());
     }
 
     #[test]
-    fn indexing_state_serializes() {
-        let s = IndexStatus::indexing();
+    fn indexing_state_serializes_with_progress() {
+        let s = IndexStatus::indexing(3, 10);
         let v = serde_json::to_value(&s).expect("serialize");
         assert_eq!(v["state"], "indexing");
+        assert_eq!(v["indexed"], 3);
+        assert_eq!(v["total"], 10);
     }
 
     #[test]
@@ -136,6 +147,7 @@ mod tests {
         assert_eq!(v["schemaVer"], 1);
         assert_eq!(v["documentCount"], 42);
         assert!(v["lastRebuiltAt"].is_string());
+        assert!(v.get("indexed").is_none());
     }
 
     #[test]

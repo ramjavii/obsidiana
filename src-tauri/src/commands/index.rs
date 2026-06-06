@@ -1,5 +1,5 @@
 use crate::error::AppResult;
-use crate::index::{db::IndexDb, status::IndexStatus};
+use crate::index::{db::IndexDb, ingest::ingest_all, status::IndexStatus};
 use crate::state::AppState;
 use tauri::{AppHandle, Manager, Runtime, State};
 
@@ -35,7 +35,7 @@ pub fn rebuild_index_inner<R: Runtime>(
             .index
             .lock()
             .map_err(|e| crate::error::AppError::internal(format!("index status lock: {e}")))?;
-        *snap = IndexStatus::indexing();
+        *snap = IndexStatus::indexing(0, 0);
     }
     let index_lock = {
         let state_handle = app.state::<AppState>();
@@ -43,9 +43,16 @@ pub fn rebuild_index_inner<R: Runtime>(
     };
     tauri::async_runtime::spawn_blocking(move || {
         let next = match IndexDb::rebuild(&vault_root) {
-            Ok(db) => match db.status() {
-                Ok(s) => s,
-                Err(e) => IndexStatus::failed(format!("status: {e}")),
+            Ok(db) => match ingest_all(db.conn(), &vault_root, |indexed, total| {
+                if let Ok(mut snap) = index_lock.lock() {
+                    *snap = IndexStatus::indexing(indexed, total);
+                }
+            }) {
+                Ok(_) => match db.status() {
+                    Ok(s) => s,
+                    Err(e) => IndexStatus::failed(format!("status: {e}")),
+                },
+                Err(e) => IndexStatus::failed(format!("ingest: {e}")),
             },
             Err(e) => IndexStatus::failed(format!("rebuild: {e}")),
         };
