@@ -35,10 +35,10 @@ Core editor & linking:
   - [x] 2.2: resolve wikilinks with shortest-path matching (IPC: `resolve_wikilink`)
   - [x] 2.3: CodeMirror syntax highlighting for `[[note]]`
   - [x] 2.4: click-to-jump on resolved wikilinks; broken-link styling + "Create note" affordance
-- [ ] Live Preview / Obsidian-like WYSIWYG editor
-  - [x] 2.5: pick markdown engine (ADR-001: Rust `markdown-rs`); ADR in `docs/architecture.md`
-  - [ ] 2.6: inline render pipeline — bold, italic, headings, inline code, fenced code, links, and resolved wikilinks render visually while the cursor stays in source positions
-  - [ ] 2.7: mode toggle in the editor chrome (Source / Live Preview / Reading view)
+  - [ ] Live Preview / Obsidian-like WYSIWYG editor
+    - [x] 2.5: pick markdown engine (ADR-001: Rust `markdown-rs`); ADR in `docs/architecture.md`
+    - [x] 2.6: inline render pipeline — bold, italic, headings, inline code, fenced code, links, and resolved wikilinks render visually while the cursor stays in source positions
+    - [ ] 2.7: mode toggle in the editor chrome (Source / Live Preview / Reading view)
 - [ ] Tags `#parent/child` extracted and listed per note
 - [ ] Backlinks panel showing incoming links to the active note
 - [ ] Custom callouts / admonitions via Rust regex preprocessor

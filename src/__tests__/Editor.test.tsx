@@ -456,4 +456,73 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
       expect(reconfigureWithExt.length).toBeGreaterThan(0);
     });
   });
+
+  it("includes the inlineRender extension in the editor when livePreviewOn is true (2.6 default)", async () => {
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "# hi",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      if (cmd === "render_markdown") {
+        return Promise.resolve({
+          html: "<h1>hi</h1>",
+          inlineSpans: [],
+          blockSpans: [{ startLine: 1, endLine: 1, kind: { kind: "heading", level: 1 } }],
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(
+      <Editor
+        path="hello.md"
+        onClose={() => undefined}
+        livePreviewOn={true}
+      />,
+      { wrapper: wrapperFactory() },
+    );
+    await screen.findByTestId("editor");
+    await waitFor(() => {
+      const hasInline = cmLastExtensions.some((e) => {
+        const wrapper = e as { __isCompartmentOf?: boolean; ext?: unknown } | undefined;
+        if (!wrapper || !wrapper.__isCompartmentOf) return false;
+        const inner = wrapper.ext as { __isInlineRender?: boolean };
+        return inner?.__isInlineRender === true;
+      });
+      expect(hasInline).toBe(true);
+    });
+  });
+
+  it("omits the inlineRender extension when livePreviewOn is false (2.6 ?lp=0)", async () => {
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "# hi",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(
+      <Editor
+        path="hello.md"
+        onClose={() => undefined}
+        livePreviewOn={false}
+      />,
+      { wrapper: wrapperFactory() },
+    );
+    await screen.findByTestId("editor");
+    await waitFor(() => {
+      const hasInline = cmLastExtensions.some((e) => {
+        const wrapper = e as { __isCompartmentOf?: boolean; ext?: unknown } | undefined;
+        if (!wrapper || !wrapper.__isCompartmentOf) return false;
+        const inner = wrapper.ext as { __isInlineRender?: boolean };
+        return inner?.__isInlineRender === true;
+      });
+      expect(hasInline).toBe(false);
+    });
+  });
 });

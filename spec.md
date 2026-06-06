@@ -5,6 +5,7 @@
 
 ## Change Log
 
+- 2026-06-05 — §2.6 inline render pipeline shipped (ADR-001 followed: Rust `markdown-rs`, char-range source map, sanitized HTML, Live Preview on by default with `?lp=0` shim until 2.7 ships the real mode toggle).
 - 2026-06-05 — ADR-001: Markdown engine pinned to Rust `markdown-rs` (resolves the open question in §2.1).
 - 2026-06-02 — Initial draft (Block 2 of project-kickoff). Refined for edge cases, race conditions, and security.
 

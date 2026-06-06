@@ -18,14 +18,16 @@ import {
   wikilinkHighlight,
   type WikilinkClickActions,
 } from "@/extensions/wikilinkHighlight";
+import { inlineRender } from "@/extensions/inlineRender";
 import { useReadNote, useWriteNoteMutation } from "@/hooks/useNote";
 import { reportError } from "@/hooks/useToastStore";
 import {
   useExtractWikilinks,
+  useRenderMarkdown,
   useWikilinkResolutionMap,
   wikilinkMapKey,
 } from "@/hooks/useMarkdown";
-import type { ResolvedLink } from "@/types/markdown";
+import type { RenderedNote, ResolvedLink } from "@/types/markdown";
 
 type Status = "loading" | "idle" | "saving" | "saved" | "error";
 
@@ -34,6 +36,7 @@ type Props = {
   onClose: () => void;
   onJump?: (resolvedPath: string, section: string | null) => void;
   onBrokenClick?: (target: string, sourcePath: string, alias: string | null) => void;
+  livePreviewOn?: boolean;
 };
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -47,7 +50,13 @@ function readMap(
   return map.get(wikilinkMapKey(target, alias)) ?? null;
 }
 
-export function Editor({ path, onClose, onJump, onBrokenClick }: Props) {
+export function Editor({
+  path,
+  onClose,
+  onJump,
+  onBrokenClick,
+  livePreviewOn = true,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const viewPathRef = useRef<string | null>(null);
@@ -62,10 +71,17 @@ export function Editor({ path, onClose, onJump, onBrokenClick }: Props) {
     (target: string, sourcePath: string, alias: string | null) => void
   >(onBrokenClick ?? NOOP);
   const compartmentRef = useRef<Compartment | null>(null);
+  const livePreviewCompRef = useRef<Compartment | null>(null);
   if (compartmentRef.current === null) {
     compartmentRef.current = new Compartment();
   }
+  if (livePreviewCompRef.current === null) {
+    livePreviewCompRef.current = new Compartment();
+  }
   const mapRef = useRef<Map<string, ResolvedLink>>(new Map());
+  const livePreviewOnRef = useRef<boolean>(livePreviewOn);
+  livePreviewOnRef.current = livePreviewOn;
+  const renderedRef = useRef<RenderedNote | null>(null);
 
   const [status, setStatus] = useState<Status>("loading");
 
@@ -74,8 +90,12 @@ export function Editor({ path, onClose, onJump, onBrokenClick }: Props) {
   const wikilinksQuery = useExtractWikilinks(path, { enabled: read.data !== undefined });
   const wikilinks = wikilinksQuery.data ?? [];
   const resolutionMap = useWikilinkResolutionMap(path, wikilinks);
+  const renderedQuery = useRenderMarkdown(path, {
+    enabled: read.data !== undefined && livePreviewOn,
+  });
 
   mapRef.current = resolutionMap;
+  renderedRef.current = renderedQuery.data ?? null;
 
   const flushSaveRef = useRef<() => Promise<void>>(async () => undefined);
 
@@ -130,6 +150,19 @@ export function Editor({ path, onClose, onJump, onBrokenClick }: Props) {
   }, [resolutionMap]);
 
   useEffect(() => {
+    const view = viewRef.current;
+    const comp = livePreviewCompRef.current;
+    if (view === null || comp === null) return;
+    view.dispatch({
+      effects: comp.reconfigure(
+        livePreviewOnRef.current
+          ? inlineRender(() => renderedRef.current)
+          : inlineRender(() => null),
+      ),
+    });
+  }, [renderedQuery.data, livePreviewOn]);
+
+  useEffect(() => {
     if (read.data === undefined) return;
     const container = containerRef.current;
     if (container === null) return;
@@ -178,7 +211,8 @@ export function Editor({ path, onClose, onJump, onBrokenClick }: Props) {
       };
 
       const compartment = compartmentRef.current;
-      if (compartment === null) return;
+      const livePreviewComp = livePreviewCompRef.current;
+      if (compartment === null || livePreviewComp === null) return;
 
       const extensions: Extension[] = [
         lineNumbers(),
@@ -189,6 +223,11 @@ export function Editor({ path, onClose, onJump, onBrokenClick }: Props) {
         oneDark,
         compartment.of(
           wikilinkHighlight((target, alias) => readMap(mapRef.current, target, alias)),
+        ),
+        livePreviewComp.of(
+          livePreviewOnRef.current
+            ? inlineRender(() => renderedRef.current)
+            : inlineRender(() => null),
         ),
         WIKILINK_CLICK_HANDLER(clickActions),
         saveKeymap,

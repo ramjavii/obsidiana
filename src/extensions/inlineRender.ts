@@ -108,7 +108,7 @@ class InlineRenderPlugin {
 }
 
 export function inlineRender(getRendered: () => RenderedNote | null): Extension {
-  return ViewPlugin.fromClass(
+  const ext = ViewPlugin.fromClass(
     class extends InlineRenderPlugin {
       constructor(view: EditorView) {
         super(view, getRendered);
@@ -116,4 +116,6 @@ export function inlineRender(getRendered: () => RenderedNote | null): Extension 
     },
     { decorations: (v) => v.decorations },
   );
+  (ext as unknown as { __isInlineRender: boolean }).__isInlineRender = true;
+  return ext;
 }

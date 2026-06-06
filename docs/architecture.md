@@ -828,6 +828,178 @@ slice (no new IPC, no new hooks, no new types in `types/markdown.ts`).
 - No `inlineRender` CodeMirror extension, no `Editor.tsx` wiring,
   no `?lp=0` flag. All are slices D and E.
 
+## Inline render pipeline (micro-feature 2.6)
+
+Live Preview is now the editor's default rendering mode. When a
+note is opened, the Rust `markdown-rs` engine (ADR-001) parses
+the source into an mdast, walks the relevant node kinds, and
+returns a `RenderedNote` containing (a) the sanitized HTML and
+(b) a char-range source map of inline spans + line-range block
+spans. The frontend `inlineRender` CodeMirror extension
+translates the source map into `Decoration.mark` (for inline
+formatting) and `Decoration.line` (for block-level backgrounds
+on fenced code, headings) ranges, with the cursor staying at
+its source byte offset throughout. Live Preview is on by
+default; an `?lp=0` URL flag is the temporary off-switch until
+2.7 ships the real Source / Live Preview / Reading view toggle.
+
+### Render contract
+
+- `render_markdown(path: String) -> AppResult<RenderedNote>` IPC
+  (15th handler). Validates the path through the same
+  `require_vault_root` + `validate_relative_path` + `read_note_in`
+  gate as 2.1/2.2, then composes a wikilink resolver closure
+  (re-using `markdown::resolve::resolve_wikilink`) and dispatches
+  to `markdown::render::render_markdown`.
+- `RenderedNote { html, inlineSpans, blockSpans }`.
+  `RenderedKind` is a tagged enum (`strong | emphasis |
+  strikethrough | heading{1..6} | codeInline | codeBlock | link |
+  wikilinkResolved`); the serde shape uses
+  `#[serde(tag = "kind", content = "level", rename_all =
+  "camelCase")]` so headings serialize as
+  `{"kind":"heading","level":1}` and tag-only variants as
+  `{"kind":"strong"}`. `RenderedSpan` carries byte offsets
+  (`start`, `end`); `RenderedBlockSpan` carries 1-indexed line
+  ranges (`startLine`, `endLine`).
+- Sanitization: `markdown-rs` is safe-by-default — raw `<script>`
+  is escaped, `javascript:` hrefs are stripped, dangerous
+  protocols are dropped — so no separate sanitizer pass is
+  needed in 2.6.
+- Wikilink post-processing: the IPC closure resolves every
+  unique `(target, alias)` pair via the existing 2.2 resolver.
+  `Resolved` produces a `WikilinkResolved` span at the right
+  byte range; `Broken` produces no span (per the 2.6 product
+  decision: broken wikilinks render as plain source text, the
+  2.4 `cm-wikilink-broken` decoration still signals state).
+  Resolved wikilinks are NOT rendered as `<a>` in the HTML; the
+  source map is the decoration contract.
+
+### Backend layout
+
+- `src-tauri/Cargo.toml` — adds `markdown = "1"` (the maintained
+  `markdown-rs` crate, ADR-001's pick).
+- `src-tauri/src/markdown/types.rs` — adds `RenderedKind`,
+  `RenderedSpan`, `RenderedBlockSpan`, `RenderedNote`. See
+  slice A.
+- `src-tauri/src/markdown/wikilink.rs` — refactored to expose
+  `wikilink_ranges()` (a positional helper that returns
+  `start`, `end`, `target`, `alias`). `extract_wikilinks()` now
+  reuses it. The 2.1 public `WikilinkRef` shape is unchanged;
+  the helper is internal.
+- `src-tauri/src/markdown/render.rs` — new
+  `render_markdown(content, resolve_wikilink) -> AppResult<RenderedNote>`.
+  Walks the mdast (Strong / Emphasis / Delete / InlineCode /
+  Code / Heading / Link produce inline marks; Code / Heading
+  also produce block line spans). Then post-processes
+  `[[wikilinks]]` against the resolver closure. HTML comes from
+  `markdown::to_html`. 17 unit tests cover the empty / plain /
+  bold / italic / heading / inline-code / fenced-code / link /
+  resolved-wikilink / broken-wikilink / nested / script-escape
+  / javascript-href-strip / span-sorting / line-range / dedup
+  cases.
+- `src-tauri/src/commands/markdown.rs` — adds
+  `render_markdown_inner` + `#[tauri::command] render_markdown`.
+- `src-tauri/src/lib.rs` — registers the 15th handler.
+- `src-tauri/tests/markdown_render.rs` — 7 `tauri::test::mock_app()`
+  tests: success, `..` rejected, missing file rejected, no
+  vault rejected, dangerous html sanitized, resolved wikilink
+  produces a `WikilinkResolved` span, broken wikilink produces
+  no span.
+
+### Frontend layout
+
+- `src/types/markdown.ts` — adds `RenderedKind` (discriminated
+  union mirroring the Rust enum), `RenderedSpan`,
+  `RenderedBlockSpan`, `RenderedNote`. camelCase keys; the
+  `heading` variant carries `{ level: number }`.
+- `src/ipc/markdown.ts` — adds `renderMarkdown(path)` wrapper.
+- `src/hooks/useMarkdown.ts` — adds `useRenderMarkdown(path,
+  {enabled})` query keyed `["markdown", "render", path]`, 5s
+  staleTime, mirrors `useExtractWikilinks` / `useResolveWikilink`.
+- `src/extensions/inlineRender.ts` (new) — exports pure helpers
+  (`cssClassForKind`, `spanToMark`, `blockSpanToLineAttributes`,
+  `buildInlineDecorations`) and the `inlineRender(getRendered)`
+  CodeMirror `ViewPlugin`. The plugin rebuilds the
+  `DecorationSet` on `docChanged` / `viewportChanged` by
+  reading the current `getRendered()` closure. A
+  `__isInlineRender` marker is set on the extension for test
+  introspection.
+- `src/components/Editor.tsx` — adds a second `Compartment`
+  (`livePreviewCompRef`) wrapping the `inlineRender` extension.
+  `useRenderMarkdown` is enabled when
+  `read.data !== undefined && livePreviewOn`. A reconfigure
+  effect fires on `[renderedQuery.data, livePreviewOn]` and
+  swaps the extension between `inlineRender(() => rendered)`
+  (Live Preview on) and `inlineRender(() => null)` (Source
+  mode, no-op). The new `livePreviewOn` prop defaults to `true`.
+- `src/App.tsx` — reads `?lp=0` from `window.location.search`
+  via `isLivePreviewOn()` (default true) and passes
+  `livePreviewOn={livePreviewOn}` to `<Editor>`. This flag is
+  the temporary shim until 2.7 ships the real Source / Live
+  Preview / Reading view toggle.
+- `src/styles.css` — adds `.cm-md-strong`, `.cm-md-em`,
+  `.cm-md-strikethrough`, `.cm-md-heading` + `.cm-md-heading-1..6`,
+  `.cm-md-code-inline`, `.cm-md-block-code-block`, `.cm-md-link`,
+  `.cm-md-wikilink-resolved`. Colors tuned for `oneDark`.
+- `src/__tests__/setup.tsx` — extends the CodeMirror mock with
+  `Decoration.line` and `RangeSetBuilder` so `inlineRender` can
+  be imported in tests without a real CM environment.
+- `src/__tests__/useRenderMarkdown.test.tsx` (new) — 4 tests:
+  happy path, key derivation, AppError surface, `enabled:false`
+  skip.
+- `src/__tests__/inlineRender.test.ts` (new) — 19 tests
+  covering the pure helpers and the factory shape.
+- `src/__tests__/App.test.tsx` — adds an end-to-end test that
+  `?lp=0` suppresses the `render_markdown` IPC call.
+- `src/__tests__/Editor.test.tsx` — adds tests for
+  `livePreviewOn=true` mounting the `inlineRender` extension
+  and `livePreviewOn=false` omitting it.
+
+### What's NOT in 2.6 (deferred)
+
+- **Mode toggle UI** (2.7) — the `?lp=0` flag is a temporary
+  shim. 2.7 ships a real Source / Live Preview / Reading view
+  toggle in the editor chrome and removes the URL flag.
+- **Fenced code inside list items** — markdown-rs produces
+  CodeBlock + ListItem nesting; 2.6 only emits block spans for
+  the CodeBlock, which means the background styling may not
+  extend correctly into the list-item continuation. Cosmetic;
+  2.6.1 follow-up if it bothers users.
+- **GFM tables, strikethrough CSS is shipped but the engine
+  walk for `Delete` is not gated by GFM** — plain CommonMark
+  does not produce `Delete` nodes, so the `Strikethrough`
+  variant is wired but never produced in 2.6. GFM tables and
+  strikethrough come with 2.7 when the engine option flips.
+- **Section jumps** (`[[note#Section]]`) are highlighted as a
+  plain `WikilinkResolved` span; clicking does not scroll the
+  cursor into the section. 2.4.1 follow-up.
+- **Per-keystroke debouncing of `render_markdown`** — the 500ms
+  autosave debounce is the natural gate. React Query's
+  `staleTime: 5_000` absorbs subsequent keystrokes within the
+  debounce window. A second debounce is premature.
+
+### Risk areas (cross-slice)
+
+- The 2.3 / 2.4 / 2.6 extensions all coexist in the same
+  `extensions: Extension[]` array. Order: `[lineNumbers,
+  history, highlightActiveLine, lineWrapping, markdown(),
+  oneDark, compartment.of(wikilinkHighlight(...)),
+  livePreviewComp.of(inlineRender(...)),
+  WIKILINK_CLICK_HANDLER(clickActions), saveKeymap, keymap.of(
+  [defaultKeymap, historyKeymap, indentWithTab]), updateListener]`.
+  The `inlineRender` extension comes after `wikilinkHighlight`
+  so its CSS classes can compose / override without conflict.
+  Verified by the 2.6 Editor tests.
+- `markdown-rs` 1.0.0 was current at the time of the ADR; if
+  the crate shape changes in a future bump, the
+  `markdown::to_mdast` + `markdown::to_html` call sites are
+  isolated to `src-tauri/src/markdown/render.rs`. No frontend
+  coupling.
+- `RenderedKind` is internally tagged with `tag = "kind"`. The
+  TS side reads it as a discriminated union on `kind`. Any new
+  variant added later (e.g. `codeBlock` per-line styling) is
+  additive on both sides.
+
 ## ADR-001: Markdown engine for Live Preview and Reading view
 
 - **Status:** Accepted, 2026-06-05.

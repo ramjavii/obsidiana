@@ -111,6 +111,9 @@ describe("App", () => {
           modifiedAt: "2026-06-03T00:00:00Z",
         });
       }
+      if (cmd === "render_markdown") {
+        return Promise.resolve({ html: "<p># hi</p>", inlineSpans: [], blockSpans: [] });
+      }
       if (cmd === "ping") return Promise.resolve("pong");
       return Promise.resolve(null);
     });
@@ -125,6 +128,54 @@ describe("App", () => {
     await user.click(screen.getByTestId("editor-close"));
     await waitFor(() => {
       expect(screen.queryByTestId("editor")).not.toBeInTheDocument();
+    });
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("mounts the Editor without inlineRender when ?lp=0 is set", async () => {
+    window.history.replaceState({}, "", "/?lp=0");
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "list_recent_vaults") {
+        return Promise.resolve([
+          {
+            name: "notes",
+            path: "/tmp/notes",
+            lastOpened: "2024-01-01T00:00:00Z",
+            available: true,
+          },
+        ]);
+      }
+      if (cmd === "open_vault") return Promise.resolve({ name: "notes", path: "/tmp/notes" });
+      if (cmd === "list_tree") {
+        return Promise.resolve([
+          { kind: "file", path: "hello.md", name: "hello.md" },
+        ]);
+      }
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "# hi",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      if (cmd === "render_markdown") {
+        return Promise.resolve({ html: "<h1>hi</h1>", inlineSpans: [], blockSpans: [] });
+      }
+      if (cmd === "ping") return Promise.resolve("pong");
+      return Promise.resolve(null);
+    });
+    renderWithProviders(<App />);
+    const treeItem = await screen.findByText("hello.md");
+    const user = userEvent.setup();
+    await user.click(treeItem);
+    await waitFor(() => {
+      expect(screen.getByTestId("editor")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      const renderCalls = invokeMock.mock.calls.filter(
+        ([c]) => c === "render_markdown",
+      );
+      expect(renderCalls).toHaveLength(0);
     });
     window.history.replaceState({}, "", "/");
   });

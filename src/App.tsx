@@ -36,6 +36,11 @@ function isDevMode(): boolean {
   return new URLSearchParams(window.location.search).get("dev") === "1";
 }
 
+function isLivePreviewOn(): boolean {
+  if (typeof window === "undefined") return true;
+  return new URLSearchParams(window.location.search).get("lp") !== "0";
+}
+
 function DevPanel() {
   const [pingResult, setPingResult] = useState<string | null>(null);
   const { data, isPending, isError, error } = useQuery({
@@ -70,6 +75,7 @@ function Shell() {
   const { status } = useVaultStatus();
   const [selectedPath, setSelectedPath] = useState<string>("");
   const createMutation = useCreateNoteMutation();
+  const livePreviewOn = isLivePreviewOn();
 
   if (status.kind !== "open") return <EmptyState />;
 
@@ -120,6 +126,7 @@ function Shell() {
               onClose={() => setSelectedPath("")}
               onJump={handleJump}
               onBrokenClick={handleBrokenClick}
+              livePreviewOn={livePreviewOn}
             />
           ) : (
             <div
