@@ -6,6 +6,7 @@ import {
   renameNote as renameNoteIpc,
 } from "@/ipc/tree";
 import { reportAppError } from "@/hooks/useToastStore";
+import { isAppError } from "@/errors";
 import type { NoteContent, RenameReport, TreeNode } from "@/types/tree";
 
 export const treeChildrenKey = (path: string | null) =>
@@ -38,9 +39,7 @@ function useTreeMutation<TArgs, TResult>(
       try {
         return await fn(args);
       } catch (err) {
-        if (err && typeof err === "object" && "kind" in err) {
-          reportAppError(err as Parameters<typeof reportAppError>[0]);
-        }
+        if (isAppError(err)) reportAppError(err);
         throw err;
       }
     },

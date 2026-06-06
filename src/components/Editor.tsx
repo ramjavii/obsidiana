@@ -187,6 +187,28 @@ export function Editor({
     pathRef.current = path;
 
     if (viewRef.current !== null && viewPathRef.current !== path) {
+      if (pendingTimeoutRef.current !== null) {
+        clearTimeout(pendingTimeoutRef.current);
+        pendingTimeoutRef.current = null;
+      }
+      const oldPath = viewPathRef.current ?? path;
+      const pendingContent = viewRef.current.state.doc.toString();
+      if (pendingContent !== persistedDocRef.current) {
+        setStatus("saving");
+        write.mutate(
+          { path: oldPath, content: pendingContent },
+          {
+            onSuccess: () => {
+              persistedDocRef.current = pendingContent;
+              setStatus("saved");
+            },
+            onError: () => {
+              setStatus("error");
+              reportError(`Failed to save ${oldPath}`);
+            },
+          },
+        );
+      }
       viewRef.current.destroy();
       viewRef.current = null;
       viewPathRef.current = null;
@@ -271,7 +293,7 @@ export function Editor({
       }
       persistedDocRef.current = read.data.content;
     }
-  }, [path, read.data]);
+  }, [path, read.data, write]);
 
   useEffect(() => {
     return () => {

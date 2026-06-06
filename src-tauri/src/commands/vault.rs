@@ -169,6 +169,21 @@ pub async fn list_recent_vaults(
     list_recent_vaults_inner(state)
 }
 
+pub fn get_open_vault_inner(state: tauri::State<'_, AppState>) -> AppResult<Option<VaultInfo>> {
+    let guard = state
+        .vault
+        .lock()
+        .map_err(|e| AppError::internal(format!("vault lock: {e}")))?;
+    Ok(guard.as_ref().map(|h| vault_info_from(&h.path)))
+}
+
+#[tauri::command]
+pub async fn get_open_vault(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Option<VaultInfo>> {
+    get_open_vault_inner(state)
+}
+
 pub fn list_settings_for_test(path: &std::path::Path) -> AppResult<Settings> {
     Settings::load(path)
 }

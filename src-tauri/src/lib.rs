@@ -22,6 +22,7 @@ pub fn run() {
             commands::vault::open_vault_force,
             commands::vault::close_vault,
             commands::vault::list_recent_vaults,
+            commands::vault::get_open_vault,
             commands::tree::list_tree,
             commands::tree::create_note,
             commands::tree::delete_note,

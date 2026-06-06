@@ -557,4 +557,62 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
     });
     expect(screen.queryByTestId("editor-container")).not.toBeInTheDocument();
   });
+
+  it("flushes the pending autosave when the path changes (regression: lost edits within 500ms debounce)", async () => {
+    const contents: Record<string, string> = {
+      "a.md": "# a",
+      "b.md": "# b",
+    };
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "ignored",
+          content: "# content",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      if (cmd === "write_note") {
+        const args = invokeMock.mock.calls.at(-1)?.[1] as
+          | { path: string; content: string }
+          | undefined;
+        if (args) contents[args.path] = args.content;
+        return Promise.resolve({ path: args?.path ?? "", modifiedAt: "2026-06-03T00:00:00Z" });
+      }
+      return Promise.resolve(null);
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const { rerender } = render(<Editor path="a.md" onClose={() => undefined} />, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>
+          {children}
+          <ToastHost />
+        </QueryClientProvider>
+      ),
+    });
+    await screen.findByTestId("editor");
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saved");
+    });
+    setCmSharedDoc("edited a");
+    act(() => {
+      fireCmUpdate(true, "edited a");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saving");
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    rerender(<Editor path="b.md" onClose={() => undefined} />);
+    await waitFor(() => {
+      const writeCalls = invokeMock.mock.calls.filter(([c]) => c === "write_note");
+      expect(writeCalls.length).toBeGreaterThanOrEqual(1);
+    });
+    const aWrite = invokeMock.mock.calls
+      .filter(([c]) => c === "write_note")
+      .map(([, args]) => args as { path: string; content: string })
+      .find((a) => a.path === "a.md");
+    expect(aWrite?.content).toBe("edited a");
+    expect(contents["a.md"]).toBe("edited a");
+  });
 });

@@ -1232,6 +1232,76 @@ Index lives at `<vault>/.obsidiana/index.db` and is gitignored.
 
 Schema migrations land with stage 3.
 
+## Polish pass (B1, B2, B5)
+
+Three targeted fixes shipped in one commit on `feature/2.7-mode-toggle`.
+No checkbox in `MVP.md` flips — stage 2 was already complete; this is a
+defect pass on the delivered surface.
+
+### B1 — `usePickVaultMutation` no longer chains `open_vault`
+
+`pick_vault_inner` (Rust) already sets the active vault, records the
+open in settings, and returns a `VaultInfo`. The frontend mutation
+*also* called `open_vault` on the result, which always failed with
+`AppError::Busy` ("another vault is already open") but only after a
+round-trip. The fix: `usePickVaultMutation` (`src/hooks/useVault.ts:79`)
+is now just `return pickVaultIpc()`. The query invalidation in
+`onSuccess` is what reflects the new vault in `useVaultStatus`.
+
+To support this, `useVaultStatus` now consults the backend's actual
+state via a new `get_open_vault` IPC before falling back to recents +
+auto-open. This also closes a pre-existing latent bug: on every
+`refetch`, the old `useVaultStatus` re-issued `open_vault` against the
+first available recent, which after `pick_vault` would hit `Busy`.
+`get_open_vault` is a read-only peek at `state.vault` and never
+mutates.
+
+### B2 — Editor flushes pending autosave on path change
+
+When the user edits a note, the autosave debounce (500ms) holds the
+content in memory. If the user clicks another file in the tree before
+the debounce fires, the old Editor instance's path-change branch
+destroyed the view and threw away the pending content. Fix: the
+path-change branch in `src/components/Editor.tsx:189` now clears the
+pending timeout, captures `view.state.doc.toString()` from the about-
+to-be-destroyed view, and fires a fire-and-forget `write.mutate(...)`
+against the OLD path before destroying. The mutation's `onSuccess`
+updates `persistedDocRef` and resets the status chip. Fire-and-forget
+(vs `mutateAsync`) is intentional: we don't need to block the
+re-render on the write, and the test for this fix verifies the call
+synchronously.
+
+### B5 — Mutation helpers use `isAppError` instead of a cast
+
+`useFileTree`, `useNote`, and `useVault` mutation `onError` blocks used
+to gate the toast on `err && typeof err === "object" && "kind" in err`
+and then `as Parameters<typeof reportAppError>[0]`. The cast was
+structurally unchecked: a plain `Error` with a `kind` field would
+slip through and be passed to `reportAppError`, which expects a real
+`AppError`. Fix: import `isAppError` from `@/errors` and use the type
+guard directly. No more `as` cast; the type is narrowed by the guard.
+
+### New / changed IPC
+
+- `get_open_vault() -> Option<VaultInfo>` — Rust `src-tauri/src/commands/vault.rs:172`,
+  registered in `src-tauri/src/lib.rs:25`. Frontend wrapper
+  `src/ipc/vault.ts:32` + `useVaultStatus` consumer
+  `src/hooks/useVault.ts:33`.
+
+### Tests added
+
+- `src/__tests__/useVault.test.tsx` — "does NOT re-invoke open_vault
+  after a successful pick (regression: pick_vault already opens)" —
+  B1 contract.
+- `src/__tests__/Editor.test.tsx` — "flushes the pending autosave
+  when the path changes (regression: lost edits within 500ms
+  debounce)" — B2 contract.
+- `src/__tests__/useNote.test.tsx` — two B5 contract tests: plain
+  `Error` rejection does NOT call `reportAppError`; malformed
+  object (`{ kind: "NotFound" }` without `data`) does NOT call
+  `reportAppError`. The pre-existing "AppError rejection DOES call
+  reportAppError" test still passes under the new guard.
+
 ## Open Questions / Backlog
 
 - ~~Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a

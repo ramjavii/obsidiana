@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   closeVault as closeVaultIpc,
+  getOpenVault as getOpenVaultIpc,
   listRecentVaults,
   openVault as openVaultIpc,
   openVaultForce as openVaultForceIpc,
   pickVault as pickVaultIpc,
 } from "@/ipc/vault";
 import { reportAppError } from "@/hooks/useToastStore";
+import { isAppError } from "@/errors";
 import type { RecentVault, VaultInfo, VaultStatus } from "@/types/vault";
 
 const VAULT_STATUS_KEY = ["vault", "status"] as const;
@@ -24,6 +26,15 @@ export function useVaultStatus() {
   const query = useQuery({
     queryKey: VAULT_STATUS_KEY,
     queryFn: async () => {
+      try {
+        const open = await getOpenVaultIpc();
+        if (open !== null) {
+          return { kind: "open" as const, vault: open };
+        }
+      } catch (err) {
+        if (isAppError(err)) reportAppError(err);
+        return { kind: "none" as const };
+      }
       const recents = await listRecentVaults();
       const target = recents.find((r) => r.available);
       if (!target) {
@@ -33,9 +44,7 @@ export function useVaultStatus() {
         const info = await openVaultIpc(target.path);
         return { kind: "open" as const, vault: info };
       } catch (err) {
-        if (err && typeof err === "object" && "kind" in err) {
-          reportAppError(err as Parameters<typeof reportAppError>[0]);
-        }
+        if (isAppError(err)) reportAppError(err);
         return { kind: "none" as const };
       }
     },
@@ -59,9 +68,7 @@ function useVaultMutation<TArgs, TResult>(
       try {
         return await fn(args);
       } catch (err) {
-        if (err && typeof err === "object" && "kind" in err) {
-          reportAppError(err as Parameters<typeof reportAppError>[0]);
-        }
+        if (isAppError(err)) reportAppError(err);
         throw err;
       }
     },
@@ -74,9 +81,7 @@ function useVaultMutation<TArgs, TResult>(
 
 export function usePickVaultMutation() {
   return useVaultMutation<undefined, VaultInfo | null>(async () => {
-    const picked = await pickVaultIpc();
-    if (!picked) return null;
-    return openVaultIpc(picked.path);
+    return pickVaultIpc();
   });
 }
 

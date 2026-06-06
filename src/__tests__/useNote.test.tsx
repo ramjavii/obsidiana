@@ -12,7 +12,16 @@ vi.mock("@/hooks/useToastStore", () => ({
   reportSuccess: vi.fn(),
 }));
 
+vi.mock("@/ipc/note", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/ipc/note")>();
+  return {
+    ...actual,
+    writeNote: vi.fn(),
+  };
+});
+
 import { reportAppError } from "@/hooks/useToastStore";
+import { writeNote as writeNoteIpcMock } from "@/ipc/note";
 
 function wrapperFactory() {
   const client = new QueryClient({
@@ -67,14 +76,13 @@ describe("useWriteNoteMutation", () => {
   beforeEach(() => {
     invokeMock.mockReset();
     vi.mocked(reportAppError).mockReset();
+    vi.mocked(writeNoteIpcMock).mockReset();
   });
 
   it("calls write_note and optimistically updates the cache on success", async () => {
-    invokeMock.mockImplementation((cmd: unknown) => {
-      if (cmd === "write_note") {
-        return Promise.resolve({ path: "hello.md", modifiedAt: "2026-06-03T00:00:01Z" });
-      }
-      return Promise.resolve(null);
+    vi.mocked(writeNoteIpcMock).mockResolvedValue({
+      path: "hello.md",
+      modifiedAt: "2026-06-03T00:00:01Z",
     });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -95,12 +103,55 @@ describe("useWriteNoteMutation", () => {
     expect(cached?.content).toBe("new");
   });
 
+  it("does NOT call reportAppError when a non-AppError rejection occurs (e.g. a plain Error)", async () => {
+    const plainError = new Error("network down");
+    vi.mocked(writeNoteIpcMock).mockRejectedValueOnce(plainError);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(["note", "read", "hello.md"], {
+      path: "hello.md",
+      content: "old",
+      modifiedAt: "2026-06-03T00:00:00Z",
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useWriteNoteMutation(), { wrapper });
+    await act(async () => {
+      await result.current
+        .mutateAsync({ path: "hello.md", content: "new" })
+        .catch(() => undefined);
+    });
+    expect(reportAppError).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call reportAppError when a malformed object is rejected (missing 'data')", async () => {
+    const malformed = { kind: "NotFound" };
+    vi.mocked(writeNoteIpcMock).mockRejectedValueOnce(malformed);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(["note", "read", "hello.md"], {
+      path: "hello.md",
+      content: "old",
+      modifiedAt: "2026-06-03T00:00:00Z",
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useWriteNoteMutation(), { wrapper });
+    await act(async () => {
+      await result.current
+        .mutateAsync({ path: "hello.md", content: "new" })
+        .catch(() => undefined);
+    });
+    expect(reportAppError).not.toHaveBeenCalled();
+  });
+
   it("surfaces an AppError rejection via reportAppError and rolls back the optimistic update", async () => {
     const appError = { kind: "Io", data: { path: "hello.md", source: "boom" } };
-    invokeMock.mockImplementation((cmd: unknown) => {
-      if (cmd === "write_note") return Promise.reject(appError);
-      return Promise.resolve(null);
-    });
+    vi.mocked(writeNoteIpcMock).mockRejectedValueOnce(appError);
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });

@@ -29,3 +29,9 @@ export async function listRecentVaults(): Promise<RecentVault[]> {
   if (!result.ok) throw result.error;
   return result.value;
 }
+
+export async function getOpenVault(): Promise<VaultInfo | null> {
+  const result = await ipcInvoke<VaultInfo | null>("get_open_vault");
+  if (!result.ok) throw result.error;
+  return result.value;
+}

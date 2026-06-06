@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { readNote as readNoteIpc, writeNote as writeNoteIpc } from "@/ipc/note";
 import { reportAppError } from "@/hooks/useToastStore";
 import { treeChildrenKey, parentOf } from "@/hooks/useFileTree";
+import { isAppError } from "@/errors";
 import type { NoteContent } from "@/types/tree";
 import type { WriteResult } from "@/types/note";
 
@@ -32,9 +33,7 @@ export function useWriteNoteMutation() {
       try {
         return await writeNoteIpc(path, content);
       } catch (err) {
-        if (err && typeof err === "object" && "kind" in err) {
-          reportAppError(err as Parameters<typeof reportAppError>[0]);
-        }
+        if (isAppError(err)) reportAppError(err);
         throw err;
       }
     },

@@ -22,7 +22,7 @@ function wrapperFactory() {
 describe("useVaultStatus", () => {
   beforeEach(() => {
     invokeMock.mockReset();
-    invokeMock.mockImplementation(() => Promise.resolve([]));
+    invokeMock.mockImplementation(() => Promise.resolve(null));
   });
 
   it("starts with kind=none when there is no last_vault and no recents", async () => {
@@ -86,21 +86,23 @@ describe("usePickVaultMutation", () => {
     invokeMock.mockReset();
   });
 
-  it("calls pick_vault and opens the result", async () => {
-    let opened: { name: string; path: string } | null = null;
+  it("calls pick_vault and the status reflects the opened vault", async () => {
+    let picked: { name: string; path: string } | null = null;
     invokeMock.mockImplementation((cmd: unknown) => {
-      if (cmd === "pick_vault") return Promise.resolve({ name: "p", path: "/p" });
-      if (cmd === "open_vault") {
-        opened = { name: "p", path: "/p" };
-        return Promise.resolve(opened);
+      if (cmd === "pick_vault") {
+        picked = { name: "p", path: "/p" };
+        return Promise.resolve(picked);
+      }
+      if (cmd === "get_open_vault") {
+        return Promise.resolve(picked);
       }
       if (cmd === "list_recent_vaults") {
         return Promise.resolve(
-          opened
+          picked
             ? [
                 {
-                  name: opened.name,
-                  path: opened.path,
+                  name: picked.name,
+                  path: picked.path,
                   lastOpened: "2024-01-01T00:00:00Z",
                   available: true,
                 },
@@ -123,6 +125,67 @@ describe("usePickVaultMutation", () => {
     await act(async () => {
       await result.current.pick.mutateAsync(undefined);
     });
+    await waitFor(() => {
+      expect(result.current.status.status).toEqual({
+        kind: "open",
+        vault: { name: "p", path: "/p" },
+      });
+    });
+  });
+
+  it("does NOT re-invoke open_vault after a successful pick (regression: pick_vault already opens)", async () => {
+    let pickCalls = 0;
+    let openCalls = 0;
+    let openVaultPath: string | null = null;
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "pick_vault") {
+        pickCalls += 1;
+        openVaultPath = "/p";
+        return Promise.resolve({ name: "p", path: "/p" });
+      }
+      if (cmd === "get_open_vault") {
+        return Promise.resolve(
+          openVaultPath ? { name: "p", path: openVaultPath } : null,
+        );
+      }
+      if (cmd === "open_vault") {
+        openCalls += 1;
+        return Promise.reject({
+          kind: "Busy",
+          data: { what: "another vault is already open" },
+        });
+      }
+      if (cmd === "list_recent_vaults") {
+        return Promise.resolve(
+          openVaultPath
+            ? [
+                {
+                  name: "p",
+                  path: "/p",
+                  lastOpened: "2024-01-01T00:00:00Z",
+                  available: true,
+                },
+              ]
+            : [],
+        );
+      }
+      return Promise.resolve(null);
+    });
+    const { result } = renderHook(
+      () => ({
+        status: useVaultStatus(),
+        pick: usePickVaultMutation(),
+      }),
+      { wrapper: wrapperFactory() },
+    );
+    await waitFor(() => {
+      expect(result.current.status.isPending).toBe(false);
+    });
+    await act(async () => {
+      await result.current.pick.mutateAsync(undefined);
+    });
+    expect(pickCalls).toBe(1);
+    expect(openCalls).toBe(0);
     await waitFor(() => {
       expect(result.current.status.status).toEqual({
         kind: "open",
