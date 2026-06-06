@@ -781,6 +781,53 @@ Limitations (deliberate, MVP-scope):
   - `window.confirm` matches the FileTree delete-confirm UX for now;
   a proper modal is a 2.4.1 polish item.
 
+## Markdown render scaffold (micro-feature 2.6, slice A)
+
+Scaffolding for the inline render pipeline (full feature ships in
+2.6 slices B–E). The function exists, the IPC contract types
+exist, the engine crate is not yet on the build graph — that
+lands in slice B. This slice is intentionally pure data shape +
+a `RenderedNote::default()` stub so the rest of slice B's diff
+stays focused on engine wiring and the new types are reviewed in
+isolation.
+
+### Backend layout
+
+- `src-tauri/src/markdown/types.rs` — adds `RenderedKind` (tagged
+  enum: `Strong | Emphasis | Strikethrough | Heading(u8) |
+  CodeInline | CodeBlock | Link | WikilinkResolved`), `RenderedSpan
+  { start, end, kind }`, `RenderedBlockSpan { startLine, endLine,
+  kind }`, `RenderedNote { html, inlineSpans, blockSpans }`. The
+  enum uses `#[serde(tag = "kind", content = "level",
+  rename_all = "camelCase")]` so variants serialize as
+  `{"kind":"heading","level":1}` for headings and `{"kind":"strong"}`
+  for the rest. camelCase rename matches the 2.1/2.2 convention.
+- `src-tauri/src/markdown/render.rs` (new) — `pub fn
+  render_markdown(_content: &str) -> AppResult<RenderedNote>` stub
+  that returns `RenderedNote::default()`. Real engine wiring
+  (markdown-rs event walk + sanitizer + source-map assembly)
+  lands in slice B.
+- `src-tauri/src/markdown/mod.rs` — declares `pub mod render;`.
+
+### Tests
+
+3 unit tests in `render.rs` cover the shape (empty input, plain
+text, span types reachable). They are forward-looking: the
+"plain text renders to non-empty html" assertion is deferred to
+slice B when the engine is wired. No frontend changes in this
+slice (no new IPC, no new hooks, no new types in `types/markdown.ts`).
+
+### What's NOT in slice A (deferred)
+
+- The `markdown` crate is not yet in `Cargo.toml`. The stub does
+  not parse. Adding the dep + the event walker is slice B.
+- No sanitizer, no wikilink post-processing, no real spans. All
+  are slice B.
+- No `render_markdown` IPC command, no `useRenderMarkdown` hook.
+  Both are slice C.
+- No `inlineRender` CodeMirror extension, no `Editor.tsx` wiring,
+  no `?lp=0` flag. All are slices D and E.
+
 ## ADR-001: Markdown engine for Live Preview and Reading view
 
 - **Status:** Accepted, 2026-06-05.
