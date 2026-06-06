@@ -38,7 +38,7 @@ Core editor & linking:
   - [ ] Live Preview / Obsidian-like WYSIWYG editor
     - [x] 2.5: pick markdown engine (ADR-001: Rust `markdown-rs`); ADR in `docs/architecture.md`
     - [x] 2.6: inline render pipeline — bold, italic, headings, inline code, fenced code, links, and resolved wikilinks render visually while the cursor stays in source positions
-    - [ ] 2.7: mode toggle in the editor chrome (Source / Live Preview / Reading view)
+    - [x] 2.7: mode toggle in the editor chrome (Source / Live Preview / Reading view)
 - [ ] Tags `#parent/child` extracted and listed per note
 - [ ] Backlinks panel showing incoming links to the active note
 - [ ] Custom callouts / admonitions via Rust regex preprocessor
@@ -88,6 +88,7 @@ Explicitly out of MVP (deferred to a later stage):
 - The user opted **out** of `sqlite-vec` for MVP. Vector search arrives with the AI stage.
 - The user has reconsidered the 3-mode editor. Obsidian-like Live Preview (inline render of bold, italic, headings, code, links, wikilinks) is wanted in MVP; a Source / Live Preview / Reading view toggle ships in micro-feature 2.7. Source mode is the only state in 1.5 and stays as a default fallback.
 - The markdown engine is still undecided. Live Preview (2.5–2.6) is the first feature that actually needs the engine; the decision is forced there.
+- Editor mode (2.7) is a single global session-only setting (Zustand in-memory, no persistence). Per-note mode persistence is a 2.7.x follow-up; the SQLite index is stage 3 work, so per-note mode is deferred alongside it. The `?lp=0` URL flag that was the temporary shim during 2.6 is gone as of 2.7 — the toggle in the editor chrome is the canonical control.
 - Full-text search is deferred — only link and tag metadata is indexed in MVP.
 - Local AI (Ollama, Whisper, MCP server) and the plugin runtime are deferred past MVP, since they require heavier infra (local model hosting, sandboxing).
 - Embedded opencode terminal panel is deferred to a later stage (see "Explicitly out of MVP"). It is NOT a part of the Local AI stack — it is a developer-ergonomics feature for using opencode from inside the app against the user's vault.

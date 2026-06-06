@@ -5,6 +5,7 @@
 
 ## Change Log
 
+- 2026-06-05 — §2.7 mode toggle shipped. Editor chrome now ships a 3-mode Source / Live Preview / Reading view toggle backed by a session-only Zustand store (`useEditorModeStore`). The `?lp=0` URL flag from 2.6 is removed. Reading view renders the Rust-sanitized `render_markdown` html via `dangerouslySetInnerHTML` inside a new `<ReadingView>` component. Per-note mode persistence deferred to 2.7.x.
 - 2026-06-05 — §2.6 inline render pipeline shipped (ADR-001 followed: Rust `markdown-rs`, char-range source map, sanitized HTML, Live Preview on by default with `?lp=0` shim until 2.7 ships the real mode toggle).
 - 2026-06-05 — ADR-001: Markdown engine pinned to Rust `markdown-rs` (resolves the open question in §2.1).
 - 2026-06-02 — Initial draft (Block 2 of project-kickoff). Refined for edge cases, race conditions, and security.

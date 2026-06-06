@@ -35,20 +35,24 @@ obsidiana/
 ├── postcss.config.js
 ├── spec.md                              # technical spec
 ├── src/                                 # frontend (React 18 + TS strict + Tailwind)
-│   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher>
+│   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher> + <EditorModeToggle>
 │   ├── components/
-│   │   ├── Editor.tsx                   # CodeMirror 6 wrapper: autosave 500ms, Ctrl/Cmd+S, status chip, close (1.5)
+│   │   ├── Editor.tsx                   # CodeMirror 6 wrapper: autosave 500ms, Ctrl/Cmd+S, status chip, close (1.5); mode prop (2.7)
+│   │   ├── EditorModeToggle.tsx         # 3-button Source / Live Preview / Reading view segmented control (2.7)
 │   │   ├── EmptyState.tsx               # "Open vault…" full-window view (first launch)
 │   │   ├── FileTree.tsx                 # recursive tree: expand dirs, right-click menu, select files
+│   │   ├── ReadingView.tsx              # sanitized-HTML read-only render via dangerouslySetInnerHTML (2.7)
 │   │   ├── ToastHost.tsx                # global error/success/info toasts
 │   │   └── VaultSwitcher.tsx            # header pill: current vault + recents + close
 │   ├── extensions/
+│   │   ├── inlineRender.ts              # CodeMirror ViewPlugin translating RenderedNote spans into Decorations (2.6)
 │   │   └── wikilinkHighlight.ts     # CodeMirror MatchDecorator + ViewPlugin; cm-wikilink / cm-wikilink-unresolved (2.3)
 │   ├── env.d.ts
 │   ├── errors.ts                        # AppError TS discriminated union (5 variants, mirrors Rust)
 │   ├── hooks/
+│   │   ├── useEditorModeStore.ts        # Zustand store: EditorMode = source | livePreview | reading (2.7)
 │   │   ├── useFileTree.ts               # useTreeChildren + create/delete/rename mutations
-│   │   ├── useMarkdown.ts               # useExtractWikilinks + useResolveWikilink (2.1, 2.2)
+│   │   ├── useMarkdown.ts               # useExtractWikilinks + useResolveWikilink + useRenderMarkdown + useWikilinkResolutionMap (2.1, 2.2, 2.6)
 │   │   ├── useNote.ts                   # useReadNote + useWriteNoteMutation (optimistic, rollback, tree invalidation) (1.5)
 │   │   ├── useToastStore.ts             # Zustand store + reportAppError() / reportError()
 │   │   └── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
@@ -173,6 +177,10 @@ obsidiana/
 | 2026-06-05 | **2.2 `ResolvedLink` is a tagged enum (`resolved` \| `broken`)** instead of a flat struct with `Option<resolvedPath>`. | The TS discriminated union lets the consumer narrow on `kind` before reading `resolvedPath`, which is more idiomatic than a flat `Option` and keeps the JSON shape stable when we add more variants later (e.g. `Resolved` with a `sectionNotFound` flag in 2.4). |
 | 2026-06-05 | **2.3 wikilink highlighter is a `MatchDecorator` + `ViewPlugin`**, not a custom CodeMirror `Language` extension. The regex uses JavaScript lookbehind (`(?<!!)`) to exclude `![[embed]]` matches directly, instead of the Rust 2.1 style post-match byte test. | `MatchDecorator` is the canonical CodeMirror pattern for regex-based syntax decoration; it auto-tracks viewport changes and re-decorates only the affected ranges. A full `Language` extension is overkill for one regex and would duplicate the Markdown parser's work. The regex itself is a JS lookbehind because V8/SpiderMonkey (Node 20) support it; the Rust extractor has no lookbehind in the `regex` crate and uses a post-check, so the two implementations differ in mechanism but agree on behavior — both exclude `![[…]]`. |
 | 2026-06-05 | **2.3 decoration has two CSS classes (`cm-wikilink cm-wikilink-unresolved`)** instead of one, as a forward-compat hook for 2.4. | 2.4 will swap `cm-wikilink-unresolved` for `cm-wikilink-resolved` or `cm-wikilink-broken` as the link index (stage 3) fills in. The base class is stable; the second class is the "state" slot. This is the same idiom as `oneDark`'s `cm-activeLine` / `cm-activeLineGutter` pair. |
+| 2026-06-05 | **2.7 editor mode is session-only Zustand (no persistence), single global mode, not per-note.** | The simpler choice for the 3-mode toggle's first ship. Per-note persistence needs a new column on the SQLite `documents` table (stage 3) or a sidecar settings file; both add surface that isn't justified by the MVP scope. The store resets to `"livePreview"` on each app launch, matching the 2.6 default. A 2.7.x follow-up can add persistence once stage 3 lands. |
+| 2026-06-05 | **2.7 Reading view is a separate `<ReadingView>` component, not a CodeMirror view.** | CodeMirror is the wrong tool for a read-only render: it is an interactive editor with cursor + selection + keymap. The reading view is a static `dangerouslySetInnerHTML` over the Rust-sanitized html from `render_markdown`, styled by a `.reading-view-body` CSS block. Mounting a separate React component is cheaper than fighting CodeMirror's "this is an editor" defaults. |
+| 2026-06-05 | **2.7 `<EditorModeToggle>` lives in `App.tsx`, not inside `<Editor>`.** | The toggle is a "what should the active note look like" control, not an editor-internal control. Keeping it in the header chrome (next to the vault switcher) makes the mode switch feel like a viewport-level choice. `<Editor>` is now a pure renderer driven by a `mode` prop, which keeps the editor's tests focused on the rendering surface. |
+| 2026-06-05 | **2.7 `?lp=0` URL flag is removed; the toggle is the only knob.** | The flag was a temporary shim during 2.6. The real control now exists. The flag is parsed but ignored (the default mode is `livePreview` regardless), so existing bookmarks keep working in the sense that the editor still opens. Documented in `MVP.md` and `spec.md` as a clean break. |
 
 ## Toolchain
 
@@ -206,6 +214,7 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `extract_wikilinks(path)` — reads the note at `path` and returns `Vec<WikilinkRef>` (`{target, alias, line}`) for every `[[note]]` / `[[note|alias]]` occurrence. Excludes embeds (`![[...]]`), skips empty targets, trims whitespace. Line numbers are 1-indexed. (micro-feature 2.1)
 - `resolve_wikilink(source_path, target, alias)` — returns a `ResolvedLink` tagged union (`resolved` or `broken`). The target is split on the first `#` to separate the note name from the section. The name is path-style (contains `/`) or bare-name (stem search, case-insensitive). When multiple notes share the same stem, the resolver picks the candidate with the shortest relative path from `source_path` (fewest combined `..` + down steps). Ties broken by alphabetical order of the resolved path. `resolved_path` is the candidate's relative path; `section` and `alias` are echoed back unmodified. Section existence is not validated in 2.2 — that lands in 2.4. (micro-feature 2.2)
 - *no new IPC in 2.3* — the wikilink syntax highlighter is purely a frontend `CodeMirror` `MatchDecorator` + `ViewPlugin` extension (`src/extensions/wikilinkHighlight.ts`). It decorates `[[note]]` and `[[note|alias]]` ranges with a `cm-wikilink cm-wikilink-unresolved` CSS class. Embeds (`![[…]]`) are excluded via a JavaScript lookbehind. No IPC call is made per keystroke; resolve-time styling lands in 2.4 when the link index from stage 3 is available. (micro-feature 2.3)
+- *no new IPC in 2.7* — the editor mode toggle is a purely frontend concern: a Zustand store (`useEditorModeStore`) holds the `EditorMode` enum, a `<EditorModeToggle>` segmented control writes to it, and `<Editor mode={...} />` reads from it. The `render_markdown` IPC from 2.6 is the only IPC the toggle indirectly affects (enabled when `mode === "livePreview" || mode === "reading"`; disabled when `mode === "source"`). The Rust backend is unchanged from 2.6.
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 
@@ -932,11 +941,23 @@ default; an `?lp=0` URL flag is the temporary off-switch until
   swaps the extension between `inlineRender(() => rendered)`
   (Live Preview on) and `inlineRender(() => null)` (Source
   mode, no-op). The new `livePreviewOn` prop defaults to `true`.
+
+  > **Superseded in 2.7.** The `livePreviewOn` boolean prop
+  > is replaced by a `mode: EditorMode` enum prop. The same
+  > two `inlineRender` configurations are still reachable
+  > (`source` → no-op, `livePreview` → active), with a third
+  > `reading` mode that mounts `<ReadingView>` instead of
+  > the CodeMirror container. See micro-feature 2.7 below.
 - `src/App.tsx` — reads `?lp=0` from `window.location.search`
   via `isLivePreviewOn()` (default true) and passes
   `livePreviewOn={livePreviewOn}` to `<Editor>`. This flag is
   the temporary shim until 2.7 ships the real Source / Live
   Preview / Reading view toggle.
+
+  > **Superseded in 2.7.** The `?lp=0` flag and
+  > `isLivePreviewOn()` helper are removed. The mode is
+  > driven by the `<EditorModeToggle>` in the header chrome,
+  > backed by `useEditorModeStore`.
 - `src/styles.css` — adds `.cm-md-strong`, `.cm-md-em`,
   `.cm-md-strikethrough`, `.cm-md-heading` + `.cm-md-heading-1..6`,
   `.cm-md-code-inline`, `.cm-md-block-code-block`, `.cm-md-link`,
@@ -957,9 +978,10 @@ default; an `?lp=0` URL flag is the temporary off-switch until
 
 ### What's NOT in 2.6 (deferred)
 
-- **Mode toggle UI** (2.7) — the `?lp=0` flag is a temporary
+- **Mode toggle UI** (2.7) — the `?lp=0` flag was a temporary
   shim. 2.7 ships a real Source / Live Preview / Reading view
-  toggle in the editor chrome and removes the URL flag.
+  toggle in the editor chrome and removes the URL flag. The
+  flag is now a no-op (see micro-feature 2.7).
 - **Fenced code inside list items** — markdown-rs produces
   CodeBlock + ListItem nesting; 2.6 only emits block spans for
   the CodeBlock, which means the background styling may not
@@ -999,6 +1021,131 @@ default; an `?lp=0` URL flag is the temporary off-switch until
   TS side reads it as a discriminated union on `kind`. Any new
   variant added later (e.g. `codeBlock` per-line styling) is
   additive on both sides.
+
+## Editor mode toggle (micro-feature 2.7)
+
+The 3-mode editor toggle the 2.6 slice E comment promised:
+`Source` (plain CodeMirror), `Live Preview` (CodeMirror + the
+`inlineRender` extension from 2.6), and `Reading view` (a
+read-only render of the Rust-sanitized HTML). The user picks
+one via a 3-button segmented control in the editor chrome.
+The `?lp=0` URL flag is gone; the toggle is the only knob.
+
+### Mode contract
+
+- `EditorMode = "source" | "livePreview" | "reading"`. Default
+  is `"livePreview"` (matches the 2.6 default).
+- The store is a plain Zustand `create` (`useEditorModeStore`),
+  in-memory, no persistence. Per-note mode is a 2.7.x follow-up
+  (deferred with the SQLite index in stage 3).
+- `setMode` is guarded by `isEditorMode` so a stray string from
+  a future IPC payload cannot poison the store. Belt and
+  suspenders; the type system already prevents it.
+- The 2.6 `<Editor livePreviewOn={...} />` boolean prop is
+  gone. The single `mode: EditorMode` prop drives everything
+  (`<Editor mode={mode} />` in `App.tsx`).
+- `useRenderMarkdown` is enabled when
+  `read.data !== undefined && (mode === "livePreview" ||
+  mode === "reading")`. Source mode skips the IPC entirely.
+- The `<EditorModeToggle>` is mounted in the header chrome
+  (next to the vault switcher) only when a note is selected.
+  Clicking a button calls `setMode`. Active state is driven by
+  the store; the toggle is purely presentational.
+
+### Reading view contract
+
+- `<ReadingView path html />` renders the sanitized html via
+  `dangerouslySetInnerHTML`. Sanitization is the Rust engine's
+  responsibility per ADR-001; the frontend trusts the html
+  string.
+- The Rust html is wrapped in a `.reading-view-body` div with
+  CSS that styles headings, paragraphs, lists, blockquote,
+  inline + block code, hr, images, and tables — tuned for
+  `oneDark` and a 72ch measure. The CSS reuses the same color
+  tokens as the Live Preview `.cm-md-*` rules so the visual
+  language is consistent across modes.
+- The reading view is read-only. No click-to-jump on wikilinks
+  inside it; that is a 2.7.x polish item (the wikilink
+  resolution map is available; only the click handler is
+  absent).
+
+### Frontend layout
+
+- `src/hooks/useEditorModeStore.ts` — Zustand store + types.
+- `src/components/EditorModeToggle.tsx` — segmented control.
+- `src/components/ReadingView.tsx` — sanitized HTML render.
+- `src/styles.css` — `.reading-view` + `.reading-view-body`
+  block + tag-selector rules.
+- `src/components/Editor.tsx` — drops `livePreviewOn`, adds
+  optional `mode` (default `"livePreview"`). Renders
+  `<ReadingView>` instead of the CodeMirror container when
+  `mode === "reading"`. The mount effect tears down the
+  CodeMirror `EditorView` on a `source → reading` or
+  `livePreview → reading` switch and skips re-creating it
+  while reading is active.
+- `src/App.tsx` — drops `isLivePreviewOn()` and the `?lp=0`
+  read; reads `useEditorModeStore` and mounts
+  `<EditorModeToggle>` in the header next to the vault
+  switcher. The toggle only shows when a file is selected.
+
+### Tests added
+
+- `src/__tests__/useEditorModeStore.test.ts` — 5 tests
+  (default mode, `setMode` for each of the 3 modes, round-trip
+  source → livePreview).
+- `src/__tests__/EditorModeToggle.test.tsx` — 5 tests
+  (renders 3 buttons, active state on the current mode, click
+  on each button calls `setMode`).
+- `src/__tests__/ReadingView.test.tsx` — 5 tests (path chip,
+  html in the body element, empty body, outer container has
+  the `reading-view` class, no script execution).
+- `src/__tests__/Editor.test.tsx` — `livePreviewOn={true}` →
+  `mode="livePreview"` rename, `livePreviewOn={false}` →
+  `mode="source"`, new `mode="reading"` test (mounts
+  `<ReadingView>`, removes `<Editor>` container).
+- `src/__tests__/App.test.tsx` — `?lp=0` is now ignored
+  (asserts the IPC is called, not suppressed); new test:
+  clicking the `Reading view` button in the chrome mounts
+  `<ReadingView>` and removes the CodeMirror container.
+
+### What's NOT in 2.7 (deferred)
+
+- **Per-note mode persistence.** SQLite index is stage 3; per-
+  note mode needs a new column or a separate settings table.
+  Deferred to 2.7.x or a follow-up.
+- **Click-to-jump in Reading view.** The wikilink resolution
+  map is available; wiring it into the read-only render is a
+  small follow-up. Pure polish.
+- **Per-keystroke debouncing of `render_markdown` for Reading
+  view.** Reading view shows the latest rendered snapshot; the
+  500ms autosave debounce gates the IPC. A second debounce is
+  premature.
+- **GFM tables and strikethrough engine walk.** The CSS for
+  `table`, `th`, `td`, and `del` is shipped in 2.7, but the
+  `markdown-rs` GFM option is not yet enabled. Tables and
+  strikethrough will start rendering once the engine option
+  flips. Documented as deferred since 2.6.
+- **Status-bar indicator for the current mode.** The toggle
+  itself shows the active state; a global status-bar chip is
+  not necessary in 2.7.
+
+### Risk areas (cross-slice)
+
+- **Mode switch while CodeMirror has a dirty buffer.** The
+  flush path (`flushSave` on close) is unchanged. Switching
+  modes does not trigger a flush; only the close button and
+  `Mod-s` do. This matches the 1.5 "silent best-effort"
+  contract.
+- **The `?lp=0` URL flag.** The flag is now a no-op (the
+  default mode is `livePreview` regardless). Existing
+  bookmarks or scripts that pass `?lp=0` will keep working in
+  the sense that the editor still opens and renders; the flag
+  is silently ignored. Documented in `MVP.md` and `spec.md`.
+- **`<EditorModeToggle>` is mounted only when a note is
+  selected.** This avoids showing the toggle for an empty
+  main pane. The toggle is a "what should the active note
+  look like" control, not a global setting; showing it
+  unconditionally would be misleading.
 
 ## ADR-001: Markdown engine for Live Preview and Reading view
 
