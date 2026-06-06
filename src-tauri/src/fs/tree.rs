@@ -18,18 +18,18 @@ pub struct TreeNode {
 
 const ALLOWED_EXTS: &[&str] = &["md", "markdown"];
 
-fn is_hidden(name: &str) -> bool {
+pub fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
 }
 
-fn file_extension_lower(name: &str) -> Option<String> {
+pub fn file_extension_lower(name: &str) -> Option<String> {
     Path::new(name)
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
 }
 
-fn is_allowed_note(name: &str, kind: &TreeNodeKind) -> bool {
+pub fn is_allowed_note(name: &str, kind: &TreeNodeKind) -> bool {
     match kind {
         TreeNodeKind::Dir => true,
         TreeNodeKind::File => match file_extension_lower(name) {
