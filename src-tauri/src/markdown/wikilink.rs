@@ -11,7 +11,15 @@ fn wikilink_re() -> &'static Regex {
         .get_or_init(|| Regex::new(r"\[\[([^\[\]]+)\]\]").expect("valid wikilink regex"))
 }
 
-pub fn extract_wikilinks(content: &str) -> Vec<WikilinkRef> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WikilinkRange {
+    pub start: usize,
+    pub end: usize,
+    pub target: String,
+    pub alias: Option<String>,
+}
+
+pub fn wikilink_ranges(content: &str) -> Vec<WikilinkRange> {
     let re = wikilink_re();
     let bytes = content.as_bytes();
     let mut out = Vec::new();
@@ -36,10 +44,23 @@ pub fn extract_wikilinks(content: &str) -> Vec<WikilinkRef> {
         } else {
             Some(alias.to_string())
         };
-        let line = content[..m.start()].bytes().filter(|&b| b == b'\n').count() + 1;
-        out.push(WikilinkRef {
+        out.push(WikilinkRange {
+            start: m.start(),
+            end: m.end(),
             target: target.to_string(),
             alias: alias_opt,
+        });
+    }
+    out
+}
+
+pub fn extract_wikilinks(content: &str) -> Vec<WikilinkRef> {
+    let mut out = Vec::new();
+    for range in wikilink_ranges(content) {
+        let line = content[..range.start].bytes().filter(|&b| b == b'\n').count() + 1;
+        out.push(WikilinkRef {
+            target: range.target,
+            alias: range.alias,
             line,
         });
     }
