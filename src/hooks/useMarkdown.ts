@@ -2,12 +2,13 @@ import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   extractWikilinks as extractWikilinksIpc,
+  getBacklinks as getBacklinksIpc,
   getTagsForNote as getTagsForNoteIpc,
   renderMarkdown as renderMarkdownIpc,
   resolveWikilink as resolveWikilinkIpc,
 } from "@/ipc/markdown";
 import type { AppError } from "@/errors";
-import type { RenderedNote, ResolvedLink, TagRef, WikilinkRef } from "@/types/markdown";
+import type { BacklinkRef, RenderedNote, ResolvedLink, TagRef, WikilinkRef } from "@/types/markdown";
 
 export const renderMarkdownKey = (path: string) =>
   ["markdown", "render", path] as const;
@@ -119,6 +120,21 @@ export function useGetTagsForNote(
   return useQuery<TagRef[], AppError>({
     queryKey: tagsForNoteKey(path),
     queryFn: () => getTagsForNoteIpc(path),
+    enabled: options?.enabled ?? true,
+    staleTime: 5_000,
+  });
+}
+
+export const backlinksForNoteKey = (path: string) =>
+  ["markdown", "backlinks", path] as const;
+
+export function useGetBacklinks(
+  path: string,
+  options?: { enabled?: boolean },
+) {
+  return useQuery<BacklinkRef[], AppError>({
+    queryKey: backlinksForNoteKey(path),
+    queryFn: () => getBacklinksIpc(path),
     enabled: options?.enabled ?? true,
     staleTime: 5_000,
   });

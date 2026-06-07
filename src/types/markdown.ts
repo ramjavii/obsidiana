@@ -63,3 +63,10 @@ export type TagRef = {
 export type GetTagsInput = {
   path: string;
 };
+
+export type BacklinkRef = {
+  sourcePath: string;
+  sourceTitle: string;
+  kind: string;
+  blockId: string | null;
+};

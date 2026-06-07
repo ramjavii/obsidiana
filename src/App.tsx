@@ -8,6 +8,7 @@ import { VaultSwitcher } from "@/components/VaultSwitcher";
 import { FileTree } from "@/components/FileTree";
 import { Editor } from "@/components/Editor";
 import { TagsPanel } from "@/components/TagsPanel";
+import { BacklinksPanel } from "@/components/BacklinksPanel";
 import { IndexStatusChip } from "@/components/IndexStatusChip";
 import { EditorModeToggle } from "@/components/EditorModeToggle";
 import { useVaultStatus } from "@/hooks/useVault";
@@ -73,6 +74,7 @@ function DevPanel() {
 function Shell() {
   const { status } = useVaultStatus();
   const [selectedPath, setSelectedPath] = useState<string>("");
+  const [rightTab, setRightTab] = useState<"tags" | "backlinks">("tags");
   const createMutation = useCreateNoteMutation();
   const mode = useEditorModeStore((s) => s.mode);
 
@@ -147,8 +149,13 @@ function Shell() {
                 type="button"
                 role="tab"
                 data-testid="tab-tags"
-                aria-selected="true"
-                className="flex-1 px-3 py-2 text-zinc-100 border-b-2 border-emerald-500"
+                aria-selected={rightTab === "tags"}
+                onClick={() => setRightTab("tags")}
+                className={`flex-1 px-3 py-2 ${
+                  rightTab === "tags"
+                    ? "text-zinc-100 border-b-2 border-emerald-500"
+                    : "text-zinc-500"
+                }`}
               >
                 Tags
               </button>
@@ -156,15 +163,25 @@ function Shell() {
                 type="button"
                 role="tab"
                 data-testid="tab-backlinks"
-                aria-selected="false"
-                className="flex-1 px-3 py-2 text-zinc-500"
-                disabled
-                title="Backlinks panel lands in the next micro-feature"
+                aria-selected={rightTab === "backlinks"}
+                onClick={() => setRightTab("backlinks")}
+                className={`flex-1 px-3 py-2 ${
+                  rightTab === "backlinks"
+                    ? "text-zinc-100 border-b-2 border-emerald-500"
+                    : "text-zinc-500"
+                }`}
               >
                 Backlinks
               </button>
             </div>
-            <TagsPanel path={selectedPath} />
+            {rightTab === "tags" ? (
+              <TagsPanel path={selectedPath} />
+            ) : (
+              <BacklinksPanel
+                path={selectedPath}
+                onNavigate={(p) => handleJump(p, null)}
+              />
+            )}
           </aside>
         ) : null}
         </section>

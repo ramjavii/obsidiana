@@ -1,5 +1,5 @@
 import { ipcInvoke } from "@/ipc";
-import type { RenderedNote, ResolvedLink, TagRef, WikilinkRef } from "@/types/markdown";
+import type { BacklinkRef, RenderedNote, ResolvedLink, TagRef, WikilinkRef } from "@/types/markdown";
 
 export async function extractWikilinks(path: string): Promise<WikilinkRef[]> {
   const result = await ipcInvoke<WikilinkRef[]>("extract_wikilinks", { path });
@@ -29,6 +29,12 @@ export async function renderMarkdown(path: string): Promise<RenderedNote> {
 
 export async function getTagsForNote(path: string): Promise<TagRef[]> {
   const result = await ipcInvoke<TagRef[]>("get_tags_for_note", { path });
+  if (!result.ok) throw result.error;
+  return result.value;
+}
+
+export async function getBacklinks(path: string): Promise<BacklinkRef[]> {
+  const result = await ipcInvoke<BacklinkRef[]>("get_backlinks", { path });
   if (!result.ok) throw result.error;
   return result.value;
 }

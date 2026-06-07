@@ -35,8 +35,10 @@ obsidiana/
 ├── postcss.config.js
 ├── spec.md                              # technical spec
 ├── src/                                 # frontend (React 18 + TS strict + Tailwind)
-│   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher> + <EditorModeToggle> + right-pane tab strip (2.8)
+│   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher> + <EditorModeToggle> + right-pane tab strip (Tags/Backlinks toggle, 2.8/2.9)
 │   ├── components/
+│   │   ├── BacklinkItem.tsx             # single clickable backlink row: title + path (2.9)
+│   │   ├── BacklinksPanel.tsx           # right-pane panel: count + BacklinkItem list + error/empty states (2.9)
 │   │   ├── Editor.tsx                   # CodeMirror 6 wrapper: autosave 500ms, Ctrl/Cmd+S, status chip, close (1.5); mode prop (2.7)
 │   │   ├── EditorModeToggle.tsx         # 3-button Source / Live Preview / Reading view segmented control (2.7)
 │   │   ├── EmptyState.tsx               # "Open vault…" full-window view (first launch)
@@ -57,7 +59,7 @@ obsidiana/
 │   │   ├── useEditorModeStore.ts        # Zustand store: EditorMode = source | livePreview | reading (2.7)
 │   │   ├── useFileTree.ts               # useTreeChildren + create/delete/rename mutations
 │   │   ├── useIndexStatus.ts            # useIndexStatus (2s polling) + useRebuildIndexMutation (3.1.3)
-│   │   ├── useMarkdown.ts               # useExtractWikilinks + useResolveWikilink + useRenderMarkdown + useWikilinkResolutionMap + useGetTagsForNote (2.1, 2.2, 2.6, 2.8)
+│   │   ├── useMarkdown.ts               # useExtractWikilinks + useResolveWikilink + useRenderMarkdown + useWikilinkResolutionMap + useGetTagsForNote + useGetBacklinks (2.1, 2.2, 2.6, 2.8, 2.9)
 │   │   ├── useNote.ts                   # useReadNote + useWriteNoteMutation (optimistic, rollback, tree invalidation) (1.5)
 │   │   ├── useToastStore.ts             # Zustand store + reportAppError() / reportError()
 │   │   ├── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
@@ -65,7 +67,7 @@ obsidiana/
 │   ├── ipc.ts                           # typed invoke() wrapper → IpcResult<T>
 │   ├── ipc/
 │   │   ├── index.ts                     # typed wrappers for index_status / rebuild_index (3.1.3)
-│   │   ├── markdown.ts                  # typed wrappers for extract_wikilinks (2.1) + resolve_wikilink (2.2) + render_markdown (2.6) + get_tags_for_note (2.8)
+│   │   ├── markdown.ts                  # typed wrappers for extract_wikilinks (2.1) + resolve_wikilink (2.2) + render_markdown (2.6) + get_tags_for_note (2.8) + get_backlinks (2.9)
 │   │   ├── note.ts                      # typed wrappers for read_note / write_note (1.5)
 │   │   ├── tree.ts                      # typed wrappers for list_tree / create_note / delete_note / rename_note
 │   │   ├── vault.ts                     # typed wrappers for pick/open/close/list_recent
@@ -74,12 +76,14 @@ obsidiana/
 │   ├── styles.css                       # @tailwind base/components/utilities + .tag-chip
 │   ├── types/
 │   │   ├── index.ts                     # IndexStatus (discriminated union; per-variant fields for indexing/broken/failed) + IndexStateKind (3.1.3, 3.1.x)
-│   │   ├── markdown.ts                  # WikilinkRef + ResolvedLink + RenderedNote + TagRef + GetTagsInput (2.1, 2.2, 2.6, 2.8)
+│   │   ├── markdown.ts                  # WikilinkRef + ResolvedLink + RenderedNote + TagRef + BacklinkRef + GetTagsInput (2.1, 2.2, 2.6, 2.8, 2.9)
 │   │   ├── note.ts                      # WriteResult (1.5)
 │   │   ├── tree.ts                      # TreeNode / TreeNodeKind / NoteContent / RenameReport
 │   │   └── vault.ts                     # VaultInfo / RecentVault / VaultStatus shapes
 │   └── __tests__/
-│       ├── App.test.tsx                 # EmptyState + Shell + sidebar + dev panel + ?dev=1 trigger + editor + right-pane TagsPanel + IndexStatusChip integration (1.1, 2.8, 3.1.3)
+│       ├── App.test.tsx                 # EmptyState + Shell + sidebar + dev panel + ?dev=1 trigger + editor + right-pane TagsPanel/BacklinksPanel + IndexStatusChip integration (1.1, 2.8, 2.9, 3.1.3)
+│       ├── BacklinkItem.test.tsx        # render title+path, click fires onClick, no-onClick renders (2.9)
+│       ├── BacklinksPanel.test.tsx      # IPC call, count, empty, error, data-backlinks-path (2.9)
 │       ├── Editor.test.tsx              # render, autosave gate, error chip + toast, close, path-change destroys view (1.5)
 │       ├── EmptyState.test.tsx          # renders, click triggers pick_vault, surfaces error
 │       ├── FileTree.test.tsx            # expand/collapse, select, right-click menu, mutations
@@ -114,7 +118,7 @@ obsidiana/
 │   │   ├── commands/
 │   │   │   ├── error_demo.rs           # ping_or_fail: dev-only error-surface fixture
 │   │   │   ├── index.rs                # index_status / rebuild_index (3.1.2)
-│   │   │   ├── markdown.rs              # extract_wikilinks (2.1) + resolve_wikilink (2.2) + render_markdown (2.6) + get_tags_for_note (2.8)
+│   │   │   ├── markdown.rs              # extract_wikilinks (2.1) + resolve_wikilink (2.2) + render_markdown (2.6) + get_tags_for_note (2.8) + get_backlinks (2.9)
 │   │   │   ├── mod.rs
 │   │   │   ├── ping.rs                  # smoke IPC command, returns "pong"
 │   │   │   ├── tree.rs                  # list_tree / create_note / delete_note / rename_note / read_note / write_note (passes state.ignore_set into mutators for self-write suppression) (3.2)
@@ -157,6 +161,7 @@ obsidiana/
 │       ├── markdown_extract.rs          # 8 mock_app() tests for extract_wikilinks (2.1)
 │       ├── markdown_render.rs           # 7 mock_app() tests for render_markdown (2.6)
 │       ├── markdown_resolve.rs          # 6 mock_app() tests for resolve_wikilink (2.2)
+│       ├── backlinks.rs                 # 4 integration tests for get_backlinks (2.9)
 │       ├── markdown_tags.rs             # 8 mock_app() tests for get_tags_for_note (2.8)
 │       ├── note_io.rs                   # 10 mock_app() tests for read_note / write_note (1.5)
 │       ├── tree_crud.rs                 # 20 mock_app() tests for all 4 tree commands + AppError paths
@@ -1370,6 +1375,105 @@ index.
 - **No tag autocomplete in the editor.** CodeMirror
   autocomplete is not yet in the editor's `extensions`
   array. Follow-up.
+
+## Backlinks panel (micro-feature 2.9)
+
+**What it does:** A right-pane panel showing all notes that link *to* the
+currently open note. Queries the SQLite `connections` table that is
+already populated by the indexer (3.1.x). The panel has loading, error,
+empty, and populated states; clicking a backlink navigates to that note.
+
+**Implementation summary:**
+
+- **IPC command:** `get_backlinks(path) → Vec<BacklinkRef>`. The Rust
+  function acquires `index_db_path` from `AppState`, opens a
+  `rusqlite::Connection`, and runs:
+  ```sql
+  SELECT d.file_path, d.title, c.kind, c.block_id
+  FROM connections c
+  JOIN documents d ON d.id = c.source_id
+  WHERE c.target_path = ?1
+  ```
+  If no DB path is set (index not yet built), returns an empty vector.
+  Errors are mapped through `?` operator → `AppError::Internal` via the
+  existing `From<rusqlite::Error>` impl.
+
+- **BacklinkRef type** — defined in `commands/markdown.rs`, serialized
+  with `#[serde(rename_all = "camelCase")]`:
+  ```rust
+  pub struct BacklinkRef {
+      pub source_path: String,
+      pub source_title: String,
+      pub kind: String,
+      pub block_id: Option<String>,
+  }
+  ```
+
+- **Frontend:** `BacklinkRef` type in `src/types/markdown.ts`,
+  `getBacklinks` IPC wrapper in `src/ipc/markdown.ts`,
+  `useGetBacklinks` hook in `src/hooks/useMarkdown.ts`.
+
+- **Components:** `BacklinkItem` renders a single clickable row (title +
+  path). `BacklinksPanel` wraps the query result with loading
+  (`…` count), error (`backlinks-error`), empty ("No backlinks"), and
+  populated (list of `BacklinkItem` rows) states.
+
+- **App.tsx wiring:** Added `rightTab` state (`"tags" | "backlinks"`).
+  The Backlinks tab is now enabled and switches between `TagsPanel` and
+  `BacklinksPanel` conditionally. Clicking a backlink calls
+  `handleJump(path, null)`.
+
+- **No changes to the indexer, watcher, or rename-refactor.** The
+  `connections` table is already populated by the existing ingest
+  pipeline.
+
+**Touched files:**
+```
+src-tauri/
+├── src/
+│   ├── commands/
+│   │   └── markdown.rs          # +BacklinkRef struct + get_backlinks_inner + get_backlinks IPC
+│   └── lib.rs                   # register commands::markdown::get_backlinks
+└── tests/
+    └── backlinks.rs             # 4 integration tests (happy path, multiple, empty, unknown)
+src/
+├── __tests__/
+│   ├── BacklinkItem.test.tsx    # 3 tests (render, click, no-onClick)
+│   └── BacklinksPanel.test.tsx  # 5 tests (IPC call, count, empty, error, data-path)
+├── components/
+│   ├── BacklinkItem.tsx         # single clickable backlink row
+│   └── BacklinksPanel.tsx       # panel with loading/error/empty/data states
+├── hooks/
+│   └── useMarkdown.ts           # +backlinksForNoteKey + useGetBacklinks
+├── ipc/
+│   └── markdown.ts              # +getBacklinks wrapper
+└── types/
+    └── markdown.ts              # +BacklinkRef type
+```
+
+**IPC command table addition:**
+
+| Command | Args | Returns |
+|---|---|---|
+| `get_backlinks` | `path: String` | `Vec<BacklinkRef>` |
+
+**Test coverage:**
+- Rust: 4 integration tests in `tests/backlinks.rs` (happy path,
+  multiple sources, no links, unknown path).
+- Frontend: 3 `BacklinkItem` tests + 5 `BacklinksPanel` tests (IPC
+  invocation, count display, empty, error, data attribute).
+
+**Known limitations:**
+- `target_path` is the raw link text from the Markdown source (e.g.,
+  `"Beta"` from `[[Beta]]`), not the resolved file path. If a
+  wikilink text differs from the actual file path, the backlinks
+  query matches on the link text, not the resolved path. This matches
+  Obsidian's behavior (shows the raw link) and the link text is what
+  the user sees in the source.
+- The query does not use `resolved_target_id`; it uses `target_path`
+  directly, so unresolved (broken) links to non-existent notes also
+  appear as backlinks. This is intentional — showing broken-link
+  backlinks helps the user fix them.
 
 ## ADR-001: Markdown engine for Live Preview and Reading view
 

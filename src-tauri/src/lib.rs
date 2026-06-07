@@ -53,6 +53,7 @@ pub fn run() {
             commands::markdown::resolve_wikilink,
             commands::markdown::render_markdown,
             commands::markdown::get_tags_for_note,
+            commands::markdown::get_backlinks,
             commands::index::index_status,
             commands::index::rebuild_index,
         ])

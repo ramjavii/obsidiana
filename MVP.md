@@ -42,7 +42,9 @@ Core editor & linking:
 - [x] Tags `#parent/child` extracted and listed per note
   - [x] 2.8: extract tags via Rust preprocessor (IPC: `get_tags_for_note`)
   - [x] 2.8: tags displayed in the right-pane TagsPanel (chip strip with count, error, empty states)
-- [ ] Backlinks panel showing incoming links to the active note
+- [x] Backlinks panel showing incoming links to the active note
+  - [x] 2.9: `get_backlinks` IPC command querying the SQLite index
+  - [x] 2.9: BacklinksPanel component with loading/error/empty/list states
 - [ ] Custom callouts / admonitions via Rust regex preprocessor
 - [ ] Note embeds `![[note#section]]` with recursion limit (3 levels)
 - [ ] Block references `^block-id` registered as linkable targets
