@@ -101,8 +101,6 @@ type Props = {
 };
 
 export function GraphView({ activePath, onNodeClick }: Props) {
-  const [maxHops, setMaxHops] = useState(2);
-  const [hideOrphans, setHideOrphans] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [graphSize, setGraphSize] = useState({ width: 256, height: 400 });
   const measuredRef = useCallback((el: HTMLDivElement | null) => {
@@ -145,13 +143,13 @@ export function GraphView({ activePath, onNodeClick }: Props) {
         data.nodes,
         data.links,
         activePath,
-        maxHops,
-        hideOrphans,
+        2,
+        true,
       );
     } catch {
       return data;
     }
-  }, [query.data, activePath, maxHops, hideOrphans]);
+  }, [query.data, activePath]);
 
   if (query.isPending) {
     return (
@@ -188,41 +186,6 @@ export function GraphView({ activePath, onNodeClick }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      {activePath ? (
-        <div className="flex items-center gap-3 border-b border-zinc-800 px-3 py-1.5 text-xs">
-          <label className="flex items-center gap-1 text-zinc-400">
-            Hops:
-            <select
-              data-testid="graph-hops-select"
-              value={maxHops}
-              onChange={(e) => setMaxHops(Number(e.target.value))}
-              className="rounded border border-zinc-700 bg-zinc-900 px-1 py-0.5 text-zinc-200"
-            >
-              <option value={1}>1</option>
-              <option value={2}>2</option>
-              <option value={3}>3</option>
-              <option value={0}>∞</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-1 text-zinc-400">
-            <input
-              type="checkbox"
-              data-testid="graph-orphan-toggle"
-              checked={hideOrphans}
-              onChange={(e) => setHideOrphans(e.target.checked)}
-              className="accent-emerald-500"
-            />
-            Hide orphans
-          </label>
-        </div>
-      ) : (
-        <div
-          data-testid="graph-filter-prompt"
-          className="border-b border-zinc-800 px-3 py-1.5 text-xs text-zinc-500"
-        >
-          Select a note from the tree to filter the graph.
-        </div>
-      )}
       <div ref={measuredRef} className="flex-1 min-h-0">
         <ForceGraph2D
           graphData={filtered ?? { nodes: [], links: [] }}
@@ -249,7 +212,7 @@ export function GraphView({ activePath, onNodeClick }: Props) {
             ctx.font = `${fontSize}px system-ui, sans-serif`;
             ctx.textAlign = "center";
             ctx.fillStyle = `rgba(212, 212, 216, ${Math.min(1, (globalScale - 0.2) / 0.5).toFixed(2)})`;
-            ctx.fillText(label, node.x ?? 0, (node.y ?? 0) - r - 4 / globalScale);
+            ctx.fillText(label, node.x ?? 0, (node.y ?? 0) + r + 4 / globalScale);
           }}
         />
       </div>
