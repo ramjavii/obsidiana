@@ -187,7 +187,7 @@ function Shell() {
             {rightTab === "tags" ? (
               <TagsPanel path={selectedPath} />
             ) : rightTab === "graph" ? (
-              <GraphView activePath={selectedPath} />
+              <GraphView activePath={selectedPath} onNodeClick={handleSelect} />
             ) : (
               <BacklinksPanel
                 path={selectedPath}

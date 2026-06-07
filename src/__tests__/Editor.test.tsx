@@ -488,7 +488,11 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
     await waitFor(() => {
       const hasInline = cmLastExtensions.some((e) => {
         if (e == null) return false;
-        return (e as { __isInlineRender?: boolean }).__isInlineRender === true;
+        if (typeof e !== "object") return false;
+        const wrapper = e as Record<string, unknown>;
+        if (!wrapper.__isCompartmentOf) return false;
+        const inner = wrapper.ext as { __isInlineRender?: boolean } | undefined;
+        return inner?.__isInlineRender === true;
       });
       expect(hasInline).toBe(true);
     });

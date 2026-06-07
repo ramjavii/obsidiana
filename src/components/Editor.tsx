@@ -71,8 +71,12 @@ export function Editor({
     (target: string, sourcePath: string, alias: string | null) => void
   >(onBrokenClick ?? NOOP);
   const compartmentRef = useRef<Compartment | null>(null);
+  const renderCompRef = useRef<Compartment | null>(null);
   if (compartmentRef.current === null) {
     compartmentRef.current = new Compartment();
+  }
+  if (renderCompRef.current === null) {
+    renderCompRef.current = new Compartment();
   }
   const mapRef = useRef<Map<string, ResolvedLink>>(new Map());
   const renderedRef = useRef<RenderedNote | null>(null);
@@ -164,6 +168,15 @@ export function Editor({
   }, [resolutionMap]);
 
   useEffect(() => {
+    const view = viewRef.current;
+    const comp = renderCompRef.current;
+    if (view === null || comp === null) return;
+    view.dispatch({
+      effects: comp.reconfigure(inlineRender(() => renderedRef.current)),
+    });
+  }, [renderedQuery.data]);
+
+  useEffect(() => {
     if (read.data === undefined) return;
     const container = containerRef.current;
     if (container === null) return;
@@ -238,7 +251,8 @@ export function Editor({
       };
 
       const compartment = compartmentRef.current;
-      if (compartment === null) return;
+      const renderComp = renderCompRef.current;
+      if (compartment === null || renderComp === null) return;
 
       const extensions: Extension[] = [
         lineNumbers(),
@@ -250,7 +264,7 @@ export function Editor({
         compartment.of(
           wikilinkHighlight((target, alias) => readMap(mapRef.current, target, alias)),
         ),
-        inlineRender(() => renderedRef.current),
+        renderComp.of(inlineRender(() => renderedRef.current)),
         WIKILINK_CLICK_HANDLER(clickActions),
         saveKeymap,
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),

@@ -87,9 +87,10 @@ function computeNhopNeighborhood(
 
 type Props = {
   activePath?: string;
+  onNodeClick?: (path: string) => void;
 };
 
-export function GraphView({ activePath }: Props) {
+export function GraphView({ activePath, onNodeClick }: Props) {
   const [maxHops, setMaxHops] = useState(2);
   const [hideOrphans, setHideOrphans] = useState(true);
 
@@ -196,6 +197,7 @@ export function GraphView({ activePath }: Props) {
           backgroundColor="#09090b"
           width={256}
           height={400}
+          onNodeClick={(node) => onNodeClick?.((node as { id: string }).id)}
           nodeCanvasObjectMode={() => "after"}
           nodeCanvasObject={(node, ctx, globalScale) => {
             const label = node.title ?? node.id ?? "";

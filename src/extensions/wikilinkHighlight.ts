@@ -45,9 +45,16 @@ function makeDecorator(
       const link = alias ? getState(target, alias) : getState(target, null);
       let state: WikilinkState = "unresolved";
       if (link) state = link.kind === "resolved" ? "resolved" : "broken";
+      const attrs: Record<string, string> = buildAttributes(target, alias);
+      if (state === "broken") {
+        attrs.title = "Broken link — click to create this note";
+      }
+      if (state === "resolved") {
+        attrs.title = "Click to navigate";
+      }
       return Decoration.mark({
         class: stateClass(state),
-        attributes: buildAttributes(target, alias),
+        attributes: attrs,
       });
     },
   });

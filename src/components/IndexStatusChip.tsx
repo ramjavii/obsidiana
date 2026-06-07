@@ -83,6 +83,8 @@ export function IndexStatusChip() {
     );
   }
 
+  if (data.state === "ready") return null;
+
   const cls = classFor(data.state);
   const label = labelFor(data);
   const tip = tooltipFor(data);

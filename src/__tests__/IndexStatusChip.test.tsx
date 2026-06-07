@@ -20,14 +20,15 @@ beforeEach(() => {
   invokeMock.mockReset();
 });
 
-it("renders the ready state as a minimal indicator", async () => {
+it("renders nothing for the ready state", async () => {
   invokeMock.mockImplementation((cmd) => {
     if (cmd === "index_status") return Promise.resolve(makeStatus("ready", { documentCount: 42 }));
     return Promise.resolve(null);
   });
-  renderWithProviders(<IndexStatusChip />);
+  const { container } = renderWithProviders(<IndexStatusChip />);
   await waitFor(() => {
-    expect(screen.getByTestId("index-status-chip")).toHaveAttribute("data-index-state", "ready");
+    const chips = container.querySelectorAll('[data-testid="index-status-chip"]');
+    expect(chips.length).toBe(0);
   });
 });
 
