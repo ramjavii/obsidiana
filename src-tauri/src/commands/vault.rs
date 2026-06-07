@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use crate::index::{kick_off, watcher};
 use crate::settings::{RecentVaultEntry, Settings};
 use crate::state::{vault_info_from, AppState, VaultHandle, VaultInfo};
 use chrono::Utc;
@@ -73,7 +74,11 @@ pub async fn pick_vault(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Option<VaultInfo>> {
-    pick_vault_inner(app, state, pick_folder_via_dialog)
+    let result = pick_vault_inner(app.clone(), state.clone(), pick_folder_via_dialog)?;
+    if let Some(info) = &result {
+        start_kick_off_and_watcher(&app, &state, PathBuf::from(&info.path));
+    }
+    Ok(result)
 }
 
 pub fn open_vault_inner(
@@ -119,16 +124,22 @@ pub fn open_vault_inner(
 pub async fn open_vault(
     path: String,
     state: tauri::State<'_, AppState>,
+    app: AppHandle,
 ) -> AppResult<VaultInfo> {
-    open_vault_inner(state, path, false)
+    let info = open_vault_inner(state.clone(), path, false)?;
+    start_kick_off_and_watcher(&app, &state, PathBuf::from(&info.path));
+    Ok(info)
 }
 
 #[tauri::command]
 pub async fn open_vault_force(
     path: String,
     state: tauri::State<'_, AppState>,
+    app: AppHandle,
 ) -> AppResult<VaultInfo> {
-    open_vault_inner(state, path, true)
+    let info = open_vault_inner(state.clone(), path, true)?;
+    start_kick_off_and_watcher(&app, &state, PathBuf::from(&info.path));
+    Ok(info)
 }
 
 pub fn close_vault_inner(state: tauri::State<'_, AppState>) -> AppResult<()> {
@@ -149,8 +160,19 @@ pub fn close_vault_inner(state: tauri::State<'_, AppState>) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub async fn close_vault(state: tauri::State<'_, AppState>) -> AppResult<()> {
-    close_vault_inner(state)
+pub async fn close_vault(state: tauri::State<'_, AppState>, app: AppHandle) -> AppResult<()> {
+    // Stop the watcher first so its worker thread is joined before
+    // we reset the index status. Order matters: the watcher reads
+    // state.index_db_path during event handling; we want the watch
+    // gone before we clear the path.
+    if let Ok(mut g) = state.watcher.lock() {
+        if let Some(h) = g.take() {
+            watcher::stop(h);
+        }
+    }
+    close_vault_inner(state)?;
+    kick_off::reset_index_status(&app);
+    Ok(())
 }
 
 pub fn list_recent_vaults_inner(
@@ -186,4 +208,34 @@ pub async fn get_open_vault(
 
 pub fn list_settings_for_test(path: &std::path::Path) -> AppResult<Settings> {
     Settings::load(path)
+}
+
+fn start_kick_off_and_watcher(
+    app: &AppHandle,
+    state: &tauri::State<'_, AppState>,
+    root: PathBuf,
+) {
+    // Stop any existing watcher before we kick off a new one. This
+    // covers the open-vault-while-vault-is-open case (force open).
+    if let Ok(mut g) = state.watcher.lock() {
+        if let Some(h) = g.take() {
+            watcher::stop(h);
+        }
+    }
+    kick_off::kick_off_index_open(app.clone(), &root);
+    match watcher::start(
+        app.clone(),
+        &root,
+        state.index_db_path.clone(),
+        state.ignore_set.clone(),
+    ) {
+        Ok(handle) => {
+            if let Ok(mut g) = state.watcher.lock() {
+                *g = Some(handle);
+            }
+        }
+        Err(e) => {
+            log::warn!("watcher: start failed: {e}");
+        }
+    }
 }

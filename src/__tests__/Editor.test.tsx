@@ -16,6 +16,7 @@ import {
   setCmSharedDoc,
   fireCmUpdate,
   resetCmTracking,
+  triggerWatcherChange,
 } from "@/__tests__/setup";
 import { Editor } from "@/components/Editor";
 import { ToastHost } from "@/components/ToastHost";
@@ -614,5 +615,68 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
       .find((a) => a.path === "a.md");
     expect(aWrite?.content).toBe("edited a");
     expect(contents["a.md"]).toBe("edited a");
+  });
+
+  it("silently re-reads when an external 'changed' event arrives and the buffer is clean", async () => {
+    let readCallCount = 0;
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        readCallCount += 1;
+        return Promise.resolve({
+          path: "hello.md",
+          content: readCallCount === 1 ? "# hi" : "# updated",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<Editor path="hello.md" onClose={() => undefined} />, {
+      wrapper: wrapperFactory(),
+    });
+    await screen.findByTestId("editor");
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saved");
+    });
+    expect(readCallCount).toBe(1);
+    act(() => {
+      triggerWatcherChange({ kind: "changed", path: "hello.md" });
+    });
+    await waitFor(() => {
+      expect(readCallCount).toBeGreaterThanOrEqual(2);
+    });
+    expect(screen.queryByTestId("fs-change-reload-needed")).not.toBeInTheDocument();
+  });
+
+  it("shows the fs-change-reload-needed placeholder when the buffer is dirty", async () => {
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        return Promise.resolve({
+          path: "hello.md",
+          content: "# hi",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<Editor path="hello.md" onClose={() => undefined} />, {
+      wrapper: wrapperFactory(),
+    });
+    await screen.findByTestId("editor");
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saved");
+    });
+    setCmSharedDoc("dirty edit");
+    act(() => {
+      fireCmUpdate(true, "dirty edit");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saving");
+    });
+    act(() => {
+      triggerWatcherChange({ kind: "changed", path: "hello.md" });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("fs-change-reload-needed")).toBeInTheDocument();
+    });
   });
 });

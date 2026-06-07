@@ -1,5 +1,7 @@
 use crate::error::AppError;
+use crate::index::ignore_set::IgnoreSet;
 use crate::index::status::IndexStatus;
+use crate::index::watcher::WatcherHandle;
 use crate::settings::Settings;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -19,6 +21,9 @@ pub struct AppState {
     pub vault: Mutex<Option<VaultHandle>>,
     pub settings_path: PathBuf,
     pub index: Arc<Mutex<IndexStatus>>,
+    pub ignore_set: Arc<IgnoreSet>,
+    pub watcher: Arc<Mutex<Option<WatcherHandle>>>,
+    pub index_db_path: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl AppState {
@@ -27,6 +32,9 @@ impl AppState {
             vault: Mutex::new(None),
             settings_path,
             index: Arc::new(Mutex::new(IndexStatus::missing())),
+            ignore_set: Arc::new(IgnoreSet::new()),
+            watcher: Arc::new(Mutex::new(None)),
+            index_db_path: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -94,5 +102,8 @@ mod tests {
             snap.state.state,
             crate::index::status::IndexStateKind::Missing
         );
+        // New fields are also at their empty defaults.
+        assert!(state.watcher.lock().expect("watcher lock").is_none());
+        assert!(state.index_db_path.lock().expect("db path lock").is_none());
     }
 }

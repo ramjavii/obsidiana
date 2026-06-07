@@ -51,7 +51,7 @@ pub fn create_note_inner(
     let vault_root = require_vault_root(&state)?;
     let relative = validate_relative_path(&path)?;
     let content = template.unwrap_or_default();
-    create_note_in(&vault_root, &relative, &content)
+    create_note_in(&vault_root, &state.ignore_set, &relative, &content)
 }
 
 #[tauri::command]
@@ -66,7 +66,7 @@ pub async fn create_note(
 pub fn delete_note_inner(state: State<'_, AppState>, path: String) -> AppResult<()> {
     let vault_root = require_vault_root(&state)?;
     let relative = validate_relative_path(&path)?;
-    delete_note_in(&vault_root, &relative)
+    delete_note_in(&vault_root, &state.ignore_set, &relative)
 }
 
 #[tauri::command]
@@ -82,7 +82,7 @@ pub fn rename_note_inner(
     let vault_root = require_vault_root(&state)?;
     let rel_from = validate_relative_path(&from)?;
     let rel_to = validate_relative_path(&to)?;
-    rename_note_in(&vault_root, &rel_from, &rel_to)
+    rename_note_in(&vault_root, &state.ignore_set, &rel_from, &rel_to)
 }
 
 #[tauri::command]
@@ -115,7 +115,7 @@ pub fn write_note_inner(
 ) -> AppResult<WriteResult> {
     let vault_root = require_vault_root(&state)?;
     let relative = validate_relative_path(&path)?;
-    write_note_in(&vault_root, &relative, &content)
+    write_note_in(&vault_root, &state.ignore_set, &relative, &content)
 }
 
 #[tauri::command]

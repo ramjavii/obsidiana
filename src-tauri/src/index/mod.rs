@@ -1,6 +1,10 @@
 pub mod db;
 pub mod extract;
+pub mod ignore_set;
 pub mod ingest;
+pub mod ingest_incremental;
 pub mod kick_off;
 pub mod schema;
 pub mod status;
+pub mod watcher;
+pub mod watcher_event;

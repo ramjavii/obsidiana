@@ -13,6 +13,30 @@ vi.mock("@tauri-apps/api/core", () => ({
     invokeMock(cmd, args) as Promise<unknown>,
 }));
 
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: () => Promise.resolve(() => undefined),
+  emit: () => Promise.resolve(),
+  once: () => Promise.resolve(() => undefined),
+}));
+
+export const watcherRegistry: Array<{
+  trigger: (c: { kind: "changed" | "deleted"; path: string }) => void;
+}> = [];
+
+vi.mock("@/ipc/watcher", () => ({
+  WATCHER_EVENT: "obsidiana://fs-change",
+  onFileChange: (
+    handler: (c: { kind: "changed" | "deleted"; path: string }) => void,
+  ) => {
+    const entry = { trigger: handler };
+    watcherRegistry.push(entry);
+    return Promise.resolve(() => {
+      const idx = watcherRegistry.indexOf(entry);
+      if (idx >= 0) watcherRegistry.splice(idx, 1);
+    });
+  },
+}));
+
 export const cmUpdateListeners: Array<(u: unknown) => void> = [];
 export let cmSharedDoc = "";
 export const cmLastExtensions: unknown[] = [];
@@ -190,6 +214,17 @@ export function setCmSharedDoc(value: string) {
   cmSharedDoc = value;
 }
 
+export function resetWatcherRegistry() {
+  watcherRegistry.length = 0;
+}
+
+export function triggerWatcherChange(payload: {
+  kind: "changed" | "deleted";
+  path: string;
+}) {
+  for (const entry of watcherRegistry) entry.trigger(payload);
+}
+
 export function clearCmUpdateListeners() {
   cmUpdateListeners.length = 0;
 }
@@ -215,6 +250,7 @@ export function renderWithProviders(ui: ReactNode) {
 afterEach(() => {
   cleanup();
   resetCmTracking();
+  resetWatcherRegistry();
   invokeMock.mockReset();
   invokeMock.mockImplementation(() => Promise.resolve("pong"));
 });

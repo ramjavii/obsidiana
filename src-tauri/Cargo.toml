@@ -21,6 +21,8 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 log = "0.4"
 markdown = "1"
+notify = "6"
+notify-debouncer-mini = "0.4"
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

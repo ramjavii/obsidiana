@@ -57,6 +57,7 @@ fn ensure_parent_exists(vault_root: &Path, absolute: &Path) -> AppResult<()> {
 
 pub fn create_note_in(
     vault_root: &Path,
+    ignore: &crate::index::ignore_set::IgnoreSet,
     relative: &Path,
     content: &str,
 ) -> AppResult<NoteContent> {
@@ -79,6 +80,7 @@ pub fn create_note_in(
     }
     std::fs::write(&absolute, content)
         .map_err(|e| AppError::from_io(absolute.display().to_string(), &e))?;
+    ignore.record(&absolute);
     let modified_at: DateTime<Utc> = absolute
         .metadata()
         .and_then(|m| m.modified())
@@ -91,7 +93,11 @@ pub fn create_note_in(
     })
 }
 
-pub fn delete_note_in(vault_root: &Path, relative: &Path) -> AppResult<()> {
+pub fn delete_note_in(
+    vault_root: &Path,
+    ignore: &crate::index::ignore_set::IgnoreSet,
+    relative: &Path,
+) -> AppResult<()> {
     let absolute = vault_root.join(relative);
     let meta = std::fs::metadata(&absolute).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -106,6 +112,7 @@ pub fn delete_note_in(vault_root: &Path, relative: &Path) -> AppResult<()> {
             relative.display()
         )));
     }
+    ignore.record(&absolute);
     std::fs::remove_file(&absolute)
         .map_err(|e| AppError::from_io(absolute.display().to_string(), &e))?;
     Ok(())
@@ -113,6 +120,7 @@ pub fn delete_note_in(vault_root: &Path, relative: &Path) -> AppResult<()> {
 
 pub fn rename_note_in(
     vault_root: &Path,
+    ignore: &crate::index::ignore_set::IgnoreSet,
     from: &Path,
     to: &Path,
 ) -> AppResult<RenameReport> {
@@ -144,6 +152,8 @@ pub fn rename_note_in(
             )));
         }
     }
+    ignore.record(&abs_from);
+    ignore.record(&abs_to);
     std::fs::rename(&abs_from, &abs_to)
         .map_err(|e| AppError::from_io(abs_from.display().to_string(), &e))?;
     Ok(RenameReport {
@@ -188,6 +198,7 @@ pub fn read_note_in(vault_root: &Path, relative: &Path) -> AppResult<NoteContent
 
 pub fn write_note_in(
     vault_root: &Path,
+    ignore: &crate::index::ignore_set::IgnoreSet,
     relative: &Path,
     content: &str,
 ) -> AppResult<WriteResult> {
@@ -214,6 +225,7 @@ pub fn write_note_in(
     }
     std::fs::write(&absolute, content.as_bytes())
         .map_err(|e| AppError::from_io(absolute.display().to_string(), &e))?;
+    ignore.record(&absolute);
     let modified_at: DateTime<Utc> = absolute
         .metadata()
         .and_then(|m| m.modified())
@@ -228,6 +240,7 @@ pub fn write_note_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::ignore_set::IgnoreSet;
     use std::path::PathBuf;
 
     fn vault() -> (tempfile::TempDir, PathBuf) {
@@ -241,7 +254,7 @@ mod tests {
     fn create_writes_file_with_provided_content() {
         let (_tmp, root) = vault();
         let rel = Path::new("hello.md");
-        let note = create_note_in(&root, rel, "# hi\n").expect("ok");
+        let note = create_note_in(&root, &IgnoreSet::new(), rel, "# hi\n").expect("ok");
         assert_eq!(note.path, "hello.md");
         assert_eq!(note.content, "# hi\n");
         assert!(!note.modified_at.is_empty());
@@ -253,7 +266,7 @@ mod tests {
     fn create_with_empty_content() {
         let (_tmp, root) = vault();
         let rel = Path::new("blank.md");
-        let note = create_note_in(&root, rel, "").expect("ok");
+        let note = create_note_in(&root, &IgnoreSet::new(), rel, "").expect("ok");
         assert_eq!(note.content, "");
         assert!(root.join("blank.md").exists());
     }
@@ -262,7 +275,7 @@ mod tests {
     fn create_rejects_missing_parent() {
         let (_tmp, root) = vault();
         let rel = Path::new("nope/new.md");
-        match create_note_in(&root, rel, "") {
+        match create_note_in(&root, &IgnoreSet::new(), rel, "") {
             Err(AppError::NotFound { .. }) => {}
             other => panic!("expected NotFound, got {other:?}"),
         }
@@ -273,7 +286,7 @@ mod tests {
     fn create_rejects_collision() {
         let (_tmp, root) = vault();
         std::fs::write(root.join("dup.md"), b"old").expect("seed");
-        match create_note_in(&root, Path::new("dup.md"), "new") {
+        match create_note_in(&root, &IgnoreSet::new(), Path::new("dup.md"), "new") {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -284,7 +297,7 @@ mod tests {
     #[test]
     fn create_rejects_non_note_extension() {
         let (_tmp, root) = vault();
-        match create_note_in(&root, Path::new("bad.txt"), "") {
+        match create_note_in(&root, &IgnoreSet::new(), Path::new("bad.txt"), "") {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -293,14 +306,14 @@ mod tests {
     #[test]
     fn create_accepts_markdown_extension() {
         let (_tmp, root) = vault();
-        create_note_in(&root, Path::new("long.markdown"), "").expect("ok");
+        create_note_in(&root, &IgnoreSet::new(), Path::new("long.markdown"), "").expect("ok");
         assert!(root.join("long.markdown").exists());
     }
 
     #[test]
     fn create_extension_match_is_case_insensitive() {
         let (_tmp, root) = vault();
-        create_note_in(&root, Path::new("UPPER.MD"), "").expect("ok");
+        create_note_in(&root, &IgnoreSet::new(), Path::new("UPPER.MD"), "").expect("ok");
         assert!(root.join("UPPER.MD").exists());
     }
 
@@ -308,14 +321,14 @@ mod tests {
     fn create_in_subfolder_when_parent_exists() {
         let (_tmp, root) = vault();
         std::fs::create_dir(root.join("notes")).expect("mkdir");
-        create_note_in(&root, Path::new("notes/inner.md"), "x").expect("ok");
+        create_note_in(&root, &IgnoreSet::new(), Path::new("notes/inner.md"), "x").expect("ok");
         assert!(root.join("notes/inner.md").exists());
     }
 
     #[test]
     fn create_rejects_path_with_no_file_name() {
         let (_tmp, root) = vault();
-        match create_note_in(&root, Path::new("notes/"), "") {
+        match create_note_in(&root, &IgnoreSet::new(), Path::new("notes/"), "") {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -325,14 +338,14 @@ mod tests {
     fn delete_removes_existing_file() {
         let (_tmp, root) = vault();
         std::fs::write(root.join("doomed.md"), b"x").expect("seed");
-        delete_note_in(&root, Path::new("doomed.md")).expect("ok");
+        delete_note_in(&root, &IgnoreSet::new(), Path::new("doomed.md")).expect("ok");
         assert!(!root.join("doomed.md").exists());
     }
 
     #[test]
     fn delete_missing_returns_not_found() {
         let (_tmp, root) = vault();
-        match delete_note_in(&root, Path::new("ghost.md")) {
+        match delete_note_in(&root, &IgnoreSet::new(), Path::new("ghost.md")) {
             Err(AppError::NotFound { .. }) => {}
             other => panic!("expected NotFound, got {other:?}"),
         }
@@ -342,7 +355,7 @@ mod tests {
     fn delete_rejects_directory() {
         let (_tmp, root) = vault();
         std::fs::create_dir(root.join("a-folder")).expect("mkdir");
-        match delete_note_in(&root, Path::new("a-folder")) {
+        match delete_note_in(&root, &IgnoreSet::new(), Path::new("a-folder")) {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -353,7 +366,7 @@ mod tests {
     fn rename_moves_file_in_place() {
         let (_tmp, root) = vault();
         std::fs::write(root.join("old.md"), b"x").expect("seed");
-        let report = rename_note_in(&root, Path::new("old.md"), Path::new("new.md"))
+        let report = rename_note_in(&root, &IgnoreSet::new(), Path::new("old.md"), Path::new("new.md"))
             .expect("ok");
         assert_eq!(report.from, "old.md");
         assert_eq!(report.to, "new.md");
@@ -366,7 +379,7 @@ mod tests {
         let (_tmp, root) = vault();
         std::fs::create_dir(root.join("dst")).expect("mkdir");
         std::fs::write(root.join("src.md"), b"x").expect("seed");
-        rename_note_in(&root, Path::new("src.md"), Path::new("dst/moved.md"))
+        rename_note_in(&root, &IgnoreSet::new(), Path::new("src.md"), Path::new("dst/moved.md"))
             .expect("ok");
         assert!(!root.join("src.md").exists());
         assert!(root.join("dst/moved.md").exists());
@@ -375,7 +388,7 @@ mod tests {
     #[test]
     fn rename_missing_source_returns_not_found() {
         let (_tmp, root) = vault();
-        match rename_note_in(&root, Path::new("ghost.md"), Path::new("new.md")) {
+        match rename_note_in(&root, &IgnoreSet::new(), Path::new("ghost.md"), Path::new("new.md")) {
             Err(AppError::NotFound { .. }) => {}
             other => panic!("expected NotFound, got {other:?}"),
         }
@@ -386,7 +399,7 @@ mod tests {
         let (_tmp, root) = vault();
         std::fs::write(root.join("a.md"), b"x").expect("seed");
         std::fs::write(root.join("b.md"), b"y").expect("seed");
-        match rename_note_in(&root, Path::new("a.md"), Path::new("b.md")) {
+        match rename_note_in(&root, &IgnoreSet::new(), Path::new("a.md"), Path::new("b.md")) {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -398,7 +411,7 @@ mod tests {
     fn rename_rejects_destination_missing_parent() {
         let (_tmp, root) = vault();
         std::fs::write(root.join("a.md"), b"x").expect("seed");
-        match rename_note_in(&root, Path::new("a.md"), Path::new("nope/b.md")) {
+        match rename_note_in(&root, &IgnoreSet::new(), Path::new("a.md"), Path::new("nope/b.md")) {
             Err(AppError::NotFound { .. }) => {}
             other => panic!("expected NotFound, got {other:?}"),
         }
@@ -409,7 +422,7 @@ mod tests {
     fn rename_rejects_non_note_extension_on_destination() {
         let (_tmp, root) = vault();
         std::fs::write(root.join("a.md"), b"x").expect("seed");
-        match rename_note_in(&root, Path::new("a.md"), Path::new("a.txt")) {
+        match rename_note_in(&root, &IgnoreSet::new(), Path::new("a.md"), Path::new("a.txt")) {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -467,7 +480,7 @@ mod tests {
     #[test]
     fn write_creates_new_file() {
         let (_tmp, root) = vault();
-        let result = write_note_in(&root, Path::new("new.md"), "fresh").expect("ok");
+        let result = write_note_in(&root, &IgnoreSet::new(), Path::new("new.md"), "fresh").expect("ok");
         assert_eq!(result.path, "new.md");
         assert!(!result.modified_at.is_empty());
         let on_disk = std::fs::read_to_string(root.join("new.md")).expect("read");
@@ -478,7 +491,7 @@ mod tests {
     fn write_overwrites_existing() {
         let (_tmp, root) = vault();
         std::fs::write(root.join("edit.md"), b"old").expect("seed");
-        let result = write_note_in(&root, Path::new("edit.md"), "new").expect("ok");
+        let result = write_note_in(&root, &IgnoreSet::new(), Path::new("edit.md"), "new").expect("ok");
         assert_eq!(result.path, "edit.md");
         let on_disk = std::fs::read_to_string(root.join("edit.md")).expect("read");
         assert_eq!(on_disk, "new");
@@ -487,7 +500,7 @@ mod tests {
     #[test]
     fn write_empty_content() {
         let (_tmp, root) = vault();
-        let result = write_note_in(&root, Path::new("blank.md"), "").expect("ok");
+        let result = write_note_in(&root, &IgnoreSet::new(), Path::new("blank.md"), "").expect("ok");
         assert_eq!(result.path, "blank.md");
         let on_disk = std::fs::read_to_string(root.join("blank.md")).expect("read");
         assert_eq!(on_disk, "");
@@ -496,7 +509,7 @@ mod tests {
     #[test]
     fn write_rejects_missing_parent() {
         let (_tmp, root) = vault();
-        match write_note_in(&root, Path::new("nope/new.md"), "x") {
+        match write_note_in(&root, &IgnoreSet::new(), Path::new("nope/new.md"), "x") {
             Err(AppError::NotFound { .. }) => {}
             other => panic!("expected NotFound, got {other:?}"),
         }
@@ -507,7 +520,7 @@ mod tests {
     fn write_rejects_directory_target() {
         let (_tmp, root) = vault();
         std::fs::create_dir(root.join("a-folder.md")).expect("mkdir");
-        match write_note_in(&root, Path::new("a-folder.md"), "x") {
+        match write_note_in(&root, &IgnoreSet::new(), Path::new("a-folder.md"), "x") {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -516,7 +529,7 @@ mod tests {
     #[test]
     fn write_rejects_non_note_extension() {
         let (_tmp, root) = vault();
-        match write_note_in(&root, Path::new("bad.txt"), "x") {
+        match write_note_in(&root, &IgnoreSet::new(), Path::new("bad.txt"), "x") {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -530,7 +543,7 @@ mod tests {
             .and_then(|m| m.modified().ok());
         std::fs::write(root.join("a.md"), b"v1").expect("seed");
         std::thread::sleep(std::time::Duration::from_millis(50));
-        let result = write_note_in(&root, Path::new("a.md"), "v2").expect("ok");
+        let result = write_note_in(&root, &IgnoreSet::new(), Path::new("a.md"), "v2").expect("ok");
         let new_mtime = std::fs::metadata(root.join("a.md"))
             .expect("meta")
             .modified()
@@ -539,5 +552,68 @@ mod tests {
             assert!(new_mtime >= orig, "mtime did not advance");
         }
         assert!(!result.modified_at.is_empty());
+    }
+
+    #[test]
+    fn create_records_self_write_in_ignore_set() {
+        let (_tmp, root) = vault();
+        let ignore = IgnoreSet::new();
+        let _ = create_note_in(&root, &ignore, Path::new("a.md"), "# a\n").expect("ok");
+        let canonical = std::fs::canonicalize(root.join("a.md")).expect("canonicalize");
+        assert!(ignore.consume(&canonical), "self-write was not recorded");
+    }
+
+    #[test]
+    fn write_records_self_write_in_ignore_set() {
+        let (_tmp, root) = vault();
+        std::fs::write(root.join("a.md"), b"old").expect("seed");
+        let ignore = IgnoreSet::new();
+        let _ = write_note_in(&root, &ignore, Path::new("a.md"), "new").expect("ok");
+        let canonical = std::fs::canonicalize(root.join("a.md")).expect("canonicalize");
+        assert!(ignore.consume(&canonical));
+    }
+
+    #[test]
+    fn delete_records_self_write_in_ignore_set() {
+        let (_tmp, root) = vault();
+        std::fs::write(root.join("a.md"), b"x").expect("seed");
+        let ignore = IgnoreSet::new();
+        delete_note_in(&root, &ignore, Path::new("a.md")).expect("ok");
+        // After deletion the file is gone; we canonicalize its
+        // pre-deletion absolute path (computed before the call) to
+        // get the same form the IgnoreSet stored.
+        let pre = std::path::Path::new(&root).join("a.md");
+        // Compute the canonical form that the IgnoreSet stored: the
+        // function recorded `absolute` which is `vault_root.join(rel)`,
+        // not canonicalized. The IgnoreSet canonicalizes internally.
+        // Simulate the watcher's canonicalize on the same input:
+        // since the file is gone, canonicalize will fail. Instead,
+        // assert the IgnoreSet would have stored a path matching
+        // the watcher's canonicalize — we re-record against the
+        // directory's canonical form to verify behavior.
+        let dir_canonical = std::fs::canonicalize(&root).expect("canonicalize root");
+        let expected = dir_canonical.join("a.md");
+        assert!(ignore.consume(&expected), "self-write was not recorded");
+        // The pre variable keeps the import alive without being unused.
+        let _ = pre;
+    }
+
+    #[test]
+    fn rename_records_both_paths_in_ignore_set() {
+        let (_tmp, root) = vault();
+        std::fs::write(root.join("old.md"), b"x").expect("seed");
+        let dir_canonical = std::fs::canonicalize(&root).expect("canonicalize root");
+        let from_expected = dir_canonical.join("old.md");
+        let to_expected = dir_canonical.join("new.md");
+        let ignore = IgnoreSet::new();
+        let _ = rename_note_in(
+            &root,
+            &ignore,
+            Path::new("old.md"),
+            Path::new("new.md"),
+        )
+        .expect("ok");
+        assert!(ignore.consume(&from_expected), "from path was not recorded");
+        assert!(ignore.consume(&to_expected), "to path was not recorded");
     }
 }

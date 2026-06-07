@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Compartment,
   EditorState,
@@ -20,7 +21,8 @@ import {
 } from "@/extensions/wikilinkHighlight";
 import { inlineRender } from "@/extensions/inlineRender";
 import { ReadingView } from "@/components/ReadingView";
-import { useReadNote, useWriteNoteMutation } from "@/hooks/useNote";
+import { noteKey, useReadNote, useWriteNoteMutation } from "@/hooks/useNote";
+import { useWatcher } from "@/hooks/useWatcher";
 import { reportError } from "@/hooks/useToastStore";
 import {
   useExtractWikilinks,
@@ -86,9 +88,11 @@ export function Editor({
   const renderedRef = useRef<RenderedNote | null>(null);
 
   const [status, setStatus] = useState<Status>("loading");
+  const [needsReload, setNeedsReload] = useState(false);
 
   const read = useReadNote(path);
   const write = useWriteNoteMutation();
+  const queryClient = useQueryClient();
   const wikilinksQuery = useExtractWikilinks(path, { enabled: read.data !== undefined });
   const wikilinks = wikilinksQuery.data ?? [];
   const resolutionMap = useWikilinkResolutionMap(path, wikilinks);
@@ -99,6 +103,22 @@ export function Editor({
 
   mapRef.current = resolutionMap;
   renderedRef.current = renderedQuery.data ?? null;
+
+  useWatcher(
+    (change) => {
+      if (change.path !== pathRef.current) return;
+      const view = viewRef.current;
+      if (view === null) return;
+      const isDirty = view.state.doc.toString() !== persistedDocRef.current;
+      if (isDirty) {
+        setNeedsReload(true);
+        return;
+      }
+      setNeedsReload(false);
+      void queryClient.invalidateQueries({ queryKey: noteKey(pathRef.current) });
+    },
+    { enabled: path !== "" },
+  );
 
   const flushSaveRef = useRef<() => Promise<void>>(async () => undefined);
 
@@ -112,6 +132,7 @@ export function Editor({
     const content = contentOverride ?? view.state.doc.toString();
     if (content === persistedDocRef.current) {
       setStatus("saved");
+      setNeedsReload(false);
       return;
     }
     setStatus("saving");
@@ -119,6 +140,7 @@ export function Editor({
       await write.mutateAsync({ path: pathRef.current, content });
       persistedDocRef.current = content;
       setStatus("saved");
+      setNeedsReload(false);
     } catch {
       setStatus("error");
       reportError(`Failed to save ${pathRef.current}`);
@@ -182,6 +204,10 @@ export function Editor({
         pendingTimeoutRef.current = null;
       }
       return;
+    }
+
+    if (viewPathRef.current !== null && viewPathRef.current !== path) {
+      setNeedsReload(false);
     }
 
     pathRef.current = path;
@@ -350,6 +376,14 @@ export function Editor({
           ×
         </button>
       </div>
+      {needsReload ? (
+        <div
+          data-testid="fs-change-reload-needed"
+          className="border-b border-amber-700 bg-amber-950/60 px-4 py-1 text-xs text-amber-200"
+        >
+          File changed on disk. Save or discard your edits, then reload.
+        </div>
+      ) : null}
       {mode === "reading" ? (
         <ReadingView
           path={path}

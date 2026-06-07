@@ -60,14 +60,16 @@ obsidiana/
 │   │   ├── useMarkdown.ts               # useExtractWikilinks + useResolveWikilink + useRenderMarkdown + useWikilinkResolutionMap + useGetTagsForNote (2.1, 2.2, 2.6, 2.8)
 │   │   ├── useNote.ts                   # useReadNote + useWriteNoteMutation (optimistic, rollback, tree invalidation) (1.5)
 │   │   ├── useToastStore.ts             # Zustand store + reportAppError() / reportError()
-│   │   └── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
+│   │   ├── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
+│   │   └── useWatcher.ts                # useWatcher(handler, { enabled }) — subscribes to Tauri event 'obsidiana://fs-change' (3.2)
 │   ├── ipc.ts                           # typed invoke() wrapper → IpcResult<T>
 │   ├── ipc/
 │   │   ├── index.ts                     # typed wrappers for index_status / rebuild_index (3.1.3)
 │   │   ├── markdown.ts                  # typed wrappers for extract_wikilinks (2.1) + resolve_wikilink (2.2) + render_markdown (2.6) + get_tags_for_note (2.8)
 │   │   ├── note.ts                      # typed wrappers for read_note / write_note (1.5)
 │   │   ├── tree.ts                      # typed wrappers for list_tree / create_note / delete_note / rename_note
-│   │   └── vault.ts                     # typed wrappers for pick/open/close/list_recent
+│   │   ├── vault.ts                     # typed wrappers for pick/open/close/list_recent
+│   │   └── watcher.ts                   # typed WatcherChange + onFileChange() over @tauri-apps/api/event::listen (3.2)
 │   ├── main.tsx                         # React 18 createRoot + QueryClient + ToastHost
 │   ├── styles.css                       # @tailwind base/components/utilities + .tag-chip
 │   ├── types/
@@ -115,12 +117,12 @@ obsidiana/
 │   │   │   ├── markdown.rs              # extract_wikilinks (2.1) + resolve_wikilink (2.2) + render_markdown (2.6) + get_tags_for_note (2.8)
 │   │   │   ├── mod.rs
 │   │   │   ├── ping.rs                  # smoke IPC command, returns "pong"
-│   │   │   ├── tree.rs                  # list_tree / create_note / delete_note / rename_note / read_note / write_note
-│   │   │   └── vault.rs                 # pick_vault / open_vault[/_force] / close_vault / list_recent_vaults / get_open_vault
+│   │   │   ├── tree.rs                  # list_tree / create_note / delete_note / rename_note / read_note / write_note (passes state.ignore_set into mutators for self-write suppression) (3.2)
+│   │   │   └── vault.rs                 # pick_vault / open_vault[/_force] / close_vault / list_recent_vaults / get_open_vault; async wrappers now call start_kick_off_and_watcher (kick_off_index_open + watcher::start) on open and watcher::stop on close (3.2)
 │   │   ├── error.rs                     # AppError enum (5 variants) + helpers + unit tests + From<rusqlite::Error> (3.1.1)
 │   │   ├── fs/
 │   │   │   ├── mod.rs
-│   │   │   ├── note.rs                  # create_note_in / delete_note_in / rename_note_in + NoteContent / RenameReport
+│   │   │   ├── note.rs                  # create_note_in / delete_note_in / rename_note_in / write_note_in + NoteContent / RenameReport / WriteResult; each mutator records its absolute path into the IgnoreSet (3.2)
 │   │   │   └── tree.rs                  # list_children + TreeNode / TreeNodeKind + is_hidden / is_allowed_note (3.1.x)
 │   │   ├── index/
 │   │   │   ├── mod.rs                   # re-exports + submodules
@@ -129,7 +131,11 @@ obsidiana/
 │   │   │   ├── status.rs                # IndexStatus snapshot + 5 state kinds + indexing(indexed,total) (3.1.1, 3.1.x)
 │   │   │   ├── extract.rs               # extract_title (H1 + fenced-code exclusion) + content_hash (blake3) (3.1.x)
 │   │   │   ├── ingest.rs                # scan_vault + index_file + ingest_all (transactional, on_progress, IngestReport) (3.1.x)
-│   │   │   └── kick_off.rs              # vault open kick-off + IPC thin wrapper; calls ingest_all after open (3.1.2, 3.1.x)
+│   │   │   ├── kick_off.rs              # vault open kick-off + IPC thin wrapper; calls ingest_all after open (3.1.2, 3.1.x); publishes state.index_db_path before spawn_blocking (3.2)
+│   │   │   ├── ignore_set.rs            # IgnoreSet (canonicalize + 1 s TTL Mutex<HashMap>) for self-write suppression (3.2)
+│   │   │   ├── ingest_incremental.rs    # apply_change / apply_deletion: transactional DELETE+INSERT in a new connection (WAL) (3.2)
+│   │   │   ├── watcher_event.rs         # WatcherChange serde enum (tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase") (3.2)
+│   │   │   └── watcher.rs               # start / stop / handle_event; std::thread worker that owns a notify-debouncer-mini handle and emits WatcherChange over the Tauri event bus (3.2)
 │   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + 18 handlers + stderr Log impl
 │   │   ├── main.rs                      # windows_subsystem = "windows" in release
 │   │   ├── markdown/
@@ -141,7 +147,7 @@ obsidiana/
 │   │   │   └── wikilink.rs              # extract_wikilinks(&str) + 12 unit tests
 │   │   ├── paths.rs                     # app_data_dir, settings_path, canonicalize_dir, validate_relative_path
 │   │   ├── settings.rs                  # Settings + RecentVaultEntry + Theme, JSON, atomic write
-│   │   └── state.rs                     # AppState { vault: Mutex<Option<VaultHandle>>, index: Arc<Mutex<IndexStatus>>, settings_path }
+│   │   └── state.rs                     # AppState { vault, index, settings_path, ignore_set: Arc<IgnoreSet>, watcher: Arc<Mutex<Option<WatcherHandle>>>, index_db_path: Arc<Mutex<Option<PathBuf>>> } (3.1, 3.2)
 │   ├── tauri.conf.json                  # identifier = "com.obsidiana.app"
 │   └── tests/
 │       ├── index_db.rs                  # 8 mock_app() tests for open / quarantine / rebuild (3.1.2)
@@ -215,6 +221,15 @@ obsidiana/
 | 2026-06-06 | **3.1 status sync is a 2s frontend polling loop, not a Tauri event bus.** The status query has `refetchInterval: 2000` and pauses when the browser tab is hidden. | The watcher (3.2) is the first feature that needs push notifications; that is the right place to introduce the event bus. For 3.1 the snapshot only changes on vault open / user-triggered rebuild, and a 2s poll is cheap (`Arc<Mutex<>>` read + JSON serialize). When 3.2 lands, `useIndexStatus` will switch to `useTauriEvent` and the polling code can be deleted. |
 | 2026-06-06 | **3.1 corrupt or unopenable `index.db` is quarantined to `<vault>/.obsidiana/index.db.broken-<unix-ts>` and a fresh DB is created.** The `quarantinedTo` path is exposed on the `IndexStatus::Broken` variant so the UI can surface it. | Matches the spec §6.2 "never crash on bad index" rule. The user always has a chance to inspect / recover the broken file, and the app keeps working. A `Failed` variant covers the case where the quarantine itself fails (e.g., the `.obsidiana/` dir is read-only) so the chip can show a clear error message instead of looping. |
 | 2026-06-06 | **3.1 IPC handlers are generic over `tauri::Runtime`** (`pub fn index_status_inner<R: tauri::Runtime>(app: &tauri::AppHandle<R>, ...)`) so `tauri::test::mock_app()` with `MockRuntime` can call them directly. The async wrappers in `lib.rs` pin `tauri::Wry`. | The mock-app pattern from 1.2+ expects every command's `*_inner` helper to accept the `AppHandle<MockRuntime>` for direct tests, while the production handler dispatches with the concrete `Wry` runtime. Generics with a trait bound on `Runtime` satisfy both without a separate test-only code path. |
+| 2026-06-06 | **3.2 `notify` v6 + `notify-debouncer-mini` 0.4, 200 ms debounce.** Hand-rolled debounce was an option; the crate is the canonical wrapper, well-maintained, and the 200 ms window matches the editor's 500 ms autosave comfortably (~25 ms overhead per event in the worker thread). | The crate is small and has no transitive `tokio` dependency. The 200 ms window is short enough that the user perceives the re-read as immediate and long enough that atomic-save tools (which can fire 3-5 raw events for a single write) coalesce into one debounced event. |
+| 2026-06-06 | **3.2 Watcher worker is a `std::thread`, not a `tauri::async_runtime::spawn` task.** The debouncer's `recv()` is blocking. Wrapping it in `spawn_blocking` would just shift the blocking; a dedicated OS thread is simpler and matches the watcher's I/O-bound nature. | The thread is the only blocking one in the IPC path. Stop is via a `oneshot::Sender`; join is on the `JoinHandle` the caller stores in `state.watcher`. The `WatcherHandle` is `Send + 'static` so it can be moved into the thread; the `AppHandle` is `Clone + Send` for the same reason. |
+| 2026-06-06 | **3.2 Tauri 2 event API uses `app.emit("obsidiana://fs-change", payload)` with the `tauri::Emitter` trait imported.** | The Tauri 1 `emit_all` is gone; `emit` is the only entry point. The mock app's `app.emit` is a no-op in tests, so watcher tests assert on side effects (`state.index.lock().document_count` and the SQLite rows from `apply_change`) rather than on event delivery. |
+| 2026-06-06 | **3.2 `WatcherChange` uses `#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]`.** | The plain `rename_all = "camelCase"` does NOT rename inner fields of a tagged enum; serde 1.0.165+ requires `rename_all_fields` for that. Without it, a future nested variant like `indexing { indexed: u64, total: u64 }` would silently serialize as snake_case and break the TS discriminated union. |
+| 2026-06-06 | **3.2 `IgnoreSet` is `std::sync::Mutex<HashMap<PathBuf, Instant>>`, not `tokio::sync::Mutex`.** 1 s TTL. | The lock is held for microseconds (HashMap insert/remove). The watcher thread is not async. The IPC thread may briefly hold the lock when calling `consume`, but again only for a `HashMap::remove` call. `tokio::sync::Mutex` would force an `.await` on every call site, which is gratuitous. |
+| 2026-06-06 | **3.2 `apply_change` opens a fresh `Connection` for each event.** `rusqlite::Connection` has no `try_clone` (the type itself is `!Clone`). | WAL mode allows multiple readers and a single writer; the event rate is bounded by human typing (single-digit Hz at most), so contention is a non-issue. A second `Connection::open(path)` is the documented pattern; the watcher's connection closes on drop, releasing the lock immediately. |
+| 2026-06-06 | **3.2 `path.exists()` distinguishes `changed` from `deleted` after a `DebouncedEvent`.** `notify-debouncer-mini`'s `DebouncedEventKind` only reports `Any` or `AnyContinuous`. | The pre-existing 3.1.x filter `is_hidden` / `is_allowed_note` is the basis for the path-component check; we extend it with a leading-dot segment test instead of a `path.file_name().to_str().starts_with('.')` test, because tempdirs on Linux have leading dots (`/tmp/.tmpXXXXXX`) and would otherwise false-positive. The check is RELATIVE to the vault root (`path.strip_prefix(root).components()`), not over the full path. |
+| 2026-06-06 | **3.2 Wire-up fix: the async `pick_vault` / `open_vault` / `open_vault_force` wrappers now call `start_kick_off_and_watcher(app, state, root)`, which runs `kick_off_index_open` + `watcher::start` in that order.** The `close_vault` async wrapper now calls `watcher::stop` (releases the worker thread) and `kick_off::reset_index_status` (clears `state.index_db_path`) on its way out. | The 3.1.x production path on these async wrappers never started the indexer on vault open — the test path called `kick_off_index_open` directly. The `IndexStatusChip` would stay `Missing` until a manual rebuild. 3.2 closes that loop. The helper is private to `commands/vault.rs`; tests that need finer-grained control (e.g., `tests/index_db.rs`) still call `_inner` + `kick_off_index_open` directly. |
+| 2026-06-06 | **3.2 `index_status` polling stays on a 2 s interval; the event bus is used only for the file-changed signal.** | The 5-state chip's `Indexing N/M` progress is set by Rust (`on_progress` callback) — there is nothing for an event to push. The watcher's emitted event is the only push in the system, and the Editor is its only consumer (via `useWatcher`). When more events land (3.3 rename refactor, eventually 5.x Git sync notifications), the same `app.emit(channel, payload)` pattern is used. |
 
 ## Toolchain
 
@@ -252,6 +267,7 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `get_tags_for_note(path)` — reads the note at `path` and returns `Vec<TagRef>` (`{name, line}`) for every `#name` occurrence. The tag's `#` must be at start-of-input or preceded by whitespace, `(`, or `[`; the name itself matches `[A-Za-z0-9_/-]+` (supports nested `parent/child` tags). Line numbers are 1-indexed. Per-note, per-line dedup is enforced in the extractor; cross-note aggregation is a stage 3 concern. (micro-feature 2.8)
 - `index_status` — returns the current `IndexStatus` snapshot: `{ state: "missing" | "indexing" | "ready" | "broken" | "failed", schemaVer, documentCount, lastRebuiltAt, ... }`. The "indexing" variant carries `indexed: number | null` and `total: number | null` (live progress from the `ingest_all` `on_progress` callback); the "broken" variant carries `quarantinedTo: string`; the "failed" variant carries `message: string`. The snapshot lives on `AppState.index: Arc<Mutex<IndexStatus>>` and is safe to call when no vault is open (returns `Missing`). (micro-feature 3.1.2; payload enriched in 3.1.x)
 - `rebuild_index` — drops any existing `<vault>/.obsidiana/index.db`, reopens the connection, runs the schema migrations, and runs the `ingest_all` engine to repopulate `documents` / `connections` / `tags`. The snapshot flips to `Indexing` with live `(indexed, total)` updates from the `on_progress` callback, then to `Ready` (or `Failed` on error) when the transaction commits. Returns `Ok(())` on success; `AppError::Busy` if a rebuild is already in flight; `AppError::InvalidArgument` if no vault is open. (micro-feature 3.1.2; ingest wired in 3.1.x)
+- *no new IPC in 3.2* — the filesystem watcher is the first feature to use the **Tauri event bus** as its delivery mechanism. The Rust worker thread emits `WatcherChange` payloads on the `obsidiana://fs-change` channel via `app.emit(channel, payload)`. The TS `onFileChange` wrapper in `src/ipc/watcher.ts` subscribes via `@tauri-apps/api/event::listen`. The `IndexStatusChip` polling loop is **unchanged** in 3.2 — only the file-changed signal moves to events. (micro-feature 3.2)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 
@@ -1807,6 +1823,226 @@ snapshot is re-derived from the DB (`status_from_db`) so the
 - **Tauri event bus.** 2 s polling remains the MVP-shape for
   status sync; the watcher (3.2) is the first feature that forces
   the move to events.
+
+## Filesystem watcher (micro-feature 3.2)
+
+Stage 3's index now stays in sync with the disk. The vault open
+wires up an `ingest_all` rebuild (3.1.x) and a debounced filesystem
+watcher (3.2); vault close tears both down. 3.2 is the first
+feature to use the Tauri event bus for push delivery to the
+frontend (replacing the 2 s status polling loop only for the
+file-changed signal — the 5-state chip still polls because the
+indexer's `Indexing N/M` progress is set by Rust, not by the
+watcher).
+
+### Architecture
+
+`src-tauri/src/index/watcher.rs` exposes three public functions:
+`start`, `stop`, and `handle_event` (the last is `pub` for tests).
+`start<R: Runtime>(app: &AppHandle<R>, root: PathBuf, ignore:
+Arc<IgnoreSet>, index_db_path: Arc<Mutex<Option<PathBuf>>>) ->
+WatcherHandle` spawns a `std::thread` (not a tokio task — the
+debouncer's `recv()` is blocking and `notify-debouncer-mini` is
+synchronous) that owns a `Debouncer<RecommendedWatcher>` and a
+crossbeam channel. The worker loop pulls debounced events, calls
+`handle_event` for each, and emits the resulting `WatcherChange`
+via `app.emit("obsidiana://fs-change", payload)`.
+
+`WatcherHandle { stop: oneshot::Sender, join: JoinHandle<()> }` is
+the in-process handle stashed in `state.watcher` (a
+`Mutex<Option<WatcherHandle>>`). `close_vault` and the next
+`open_vault` call `stop(handle)` before replacing the slot, so at
+most one watcher is alive at a time.
+
+`state.index_db_path` (new in 3.2) is `Arc<Mutex<Option<PathBuf>>>`.
+`kick_off_index_open` publishes the DB path *before* spawning the
+open task so that a watcher started right after a vault open can
+find the DB. The watcher reads it under the mutex on every event;
+if the path is `None` (e.g. close happened mid-event) the event
+is a no-op.
+
+`handle_event(path, vault_root, index_db_path, ignore, app)` is the
+filter + dispatch step. It runs synchronously on the worker thread:
+
+1. `path` must start with `vault_root`; otherwise drop.
+2. Reject any segment whose name starts with `.` (computed via
+   `path.strip_prefix(vault_root).components()` to avoid false
+   positives on tempdirs with leading dots).
+3. Reject `.db`, `-wal`, `-shm` extensions.
+4. Reject paths whose canonical form is in `IgnoreSet.consume`
+   (self-write; the IgnoreSet has a 1 s TTL so we don't grow
+   unbounded across a long session).
+5. `path.exists()` distinguishes `changed` (still on disk) from
+   `deleted` (gone). `DebouncedEventKind` only reports `Any` /
+   `AnyContinuous`; we use `path.exists()` as the discriminator.
+6. Open a fresh `Connection` at the stored DB path (WAL mode
+   allows concurrent opens), call
+   `index::ingest_incremental::apply_change` or `apply_deletion`
+   in a transaction, close the connection. The watcher's
+   `apply_change` runs `delete by path; insert (path, ...)`. This
+   is the only writer besides `ingest_all`; the existing index is
+   preserved for all other notes.
+7. Emit a `WatcherChange` over the event bus. The frontend's
+   `useWatcher` re-reads the note (silent on clean buffer,
+   placeholder banner on dirty buffer — see the Editor section
+   below).
+
+The watcher also flips `IndexStateKind::Missing | Indexing ->
+Ready` on its first successful DB write. This is the recovery path
+for the race where a `kick_off_index_open` is still in flight when
+the user makes the first external edit (the watcher proves the
+index is alive by writing to it).
+
+### Self-write suppression (the IgnoreSet)
+
+Every mutator in `src-tauri/src/fs/note.rs`
+(`create_note_in`, `write_note_in`, `delete_note_in`,
+`rename_note_in`) now takes `&IgnoreSet` and calls
+`ignore.record(absolute_path)` after a successful `std::fs` op.
+`rename_note_in` records both the source and destination
+pre-rename; both are entries the watcher will see. The
+`commands/tree.rs` async wrappers pass `&state.ignore_set`.
+
+`IgnoreSet` is a `std::sync::Mutex<HashMap<PathBuf, Instant>>`
+with a 1 s TTL (configurable via the `TTL` constant; tested at
+1.5 s to cover the 200 ms debouncer + test poll slack). `record`
+canonicalizes the path before storing. `consume` removes the entry
+on hit (consume-once is intentional — once the watcher has
+suppressed one event, subsequent duplicates within the TTL should
+not be suppressed again, because if there is a real subsequent
+edit it should land in the index).
+
+The IgnoreSet lives on `AppState.ignore_set` (`Arc<IgnoreSet>`)
+and is shared with the watcher thread. It is `std::sync::Mutex`
+(not `tokio::sync::Mutex`) because the lock is held for microseconds
+and the watcher thread is not async.
+
+### Frontend integration
+
+`src/ipc/watcher.ts` exports a `WatcherChange` discriminated union
+(`{ kind: "changed", path: string } | { kind: "deleted", path: string }`),
+`WATCHER_EVENT = "obsidiana://fs-change"`, and an `onFileChange(handler)
+-> Promise<UnlistenFn>` wrapper around `@tauri-apps/api/event::listen`.
+The serde on the Rust side uses `#[serde(tag = "kind", rename_all =
+"camelCase", rename_all_fields = "camelCase")]` so the wire shape is
+identical to the TS type.
+
+`src/hooks/useWatcher.ts` is a `useEffect` that subscribes on mount
+and unsubscribes on unmount. It accepts `options.enabled` (defaults
+to `true`); the Editor passes `{ enabled: path !== "" }`. The
+handler is stored in a ref so re-renders do not re-subscribe.
+
+`src/components/Editor.tsx` calls `useWatcher((change) => { ... }, { enabled: ... })`.
+The handler:
+
+- Skips events whose `path` is not the current `pathRef.current`.
+- If the CodeMirror view is null (race during path switch), drops
+  the event.
+- Reads `view.state.doc.toString()` and compares it to
+  `persistedDocRef.current`. If they differ, the user has unsaved
+  edits: set `needsReload = true` and render the
+  `data-testid="fs-change-reload-needed"` placeholder banner.
+- If they match, invalidate the `["note", "read", path]` query
+  cache; `useReadNote` refetches and the Editor's existing
+  `useEffect` re-syncs the view.
+
+`needsReload` is cleared on a successful `flushSave` and on a
+path change (the new note starts fresh). The user-visible Reload
+/ Discard buttons on the banner are a 3.2.1 follow-up; for 3.2.0
+the banner is informational only.
+
+### Wire-up fix from 3.1.x
+
+The async `pick_vault` / `open_vault` / `open_vault_force`
+wrappers in `src-tauri/src/commands/vault.rs` previously returned
+the `VaultInfo` and stopped. The `kick_off_index_open` call lived
+in a separate test path (`tests/index_db.rs` called it directly).
+This meant the production path on the 3.1.x branch never started
+the indexer on vault open — the `IndexStatusChip` would stay
+`Missing` until a manual rebuild. 3.2 fixes this with a private
+helper `start_kick_off_and_watcher(app, state, root)` that
+`kick_off_index_open`s and `watcher::start`s, called from all
+three async vault-open wrappers. The `close_vault` async wrapper
+now calls `watcher::stop` (releasing the worker thread) and
+`kick_off::reset_index_status` (which also clears
+`state.index_db_path`) on its way out.
+
+### Decision rows (ADRs)
+
+- **3.2 — `notify` v6 + `notify-debouncer-mini` 0.4, 200 ms debounce.** Hand-rolled debounce was an option; `notify-debouncer-mini` is the canonical wrapper, well-maintained, and the 200 ms window matches the editor's 500 ms autosave comfortably. ~25 ms overhead per event in the worker thread.
+- **3.2 — Watcher worker is a `std::thread`, not a `tauri::async_runtime::spawn` task.** The debouncer's `recv()` is blocking. Wrapping it in `spawn_blocking` would just shift the blocking; a dedicated OS thread is simpler and matches the watcher's I/O-bound nature. Stop is via a `oneshot::Sender`; join is on the `JoinHandle` the caller stores.
+- **3.2 — Tauri 2 event API uses `app.emit("obsidiana://fs-change", payload)` with the `tauri::Emitter` trait imported.** The Tauri 1 `emit_all` is gone; `emit` is the only entry point. The mock app's `app.emit` is a no-op in tests, so watcher tests assert on the side effects (`state.index.lock().document_count` and the `apply_change` SQLite rows) rather than on event delivery.
+- **3.2 — `WatcherChange` uses `#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]`.** The plain `rename_all = "camelCase"` does NOT rename inner fields of a tagged enum; serde 1.0.165+ requires `rename_all_fields` for that. Without it, the wire shape would be `{"kind": "changed", "path": "..."}` (lowercase) instead of the expected `{"kind": "changed", "path": "..."}` — actually identical for snake_case-friendly fields, but the `indexing(indexed, total)` variant and any future nested struct would silently break.
+- **3.2 — `IgnoreSet` is `std::sync::Mutex`, not `tokio::sync::Mutex`.** The lock is held for microseconds. The watcher thread is not async. The IPC thread may briefly hold the lock when calling `consume`, but again only for a `HashMap::remove` call.
+- **3.2 — `apply_change` opens a fresh `Connection` for each event.** `rusqlite::Connection` has no `try_clone` (the type itself is `!Clone`). WAL mode allows multiple readers and a single writer; the event rate is bounded by human typing, so contention is a non-issue. A second `Connection::open(path)` is the documented pattern.
+- **3.2 — `path.exists()` distinguishes changed from deleted.** `notify-debouncer-mini`'s `DebouncedEventKind` only reports `Any` or `AnyContinuous`. The pre-existing 3.1.x filter `is_hidden` / `is_allowed_note` was the basis for the path-component check; we extend it with a leading-dot segment test instead of a `path.file_name().to_str().starts_with('.')` test, because tempdirs on Linux have leading dots and would otherwise false-positive (the check is RELATIVE to the vault root, not over the full path).
+- **3.2 — Watcher tests live in `src-tauri/src/index/watcher.rs` `#[cfg(test)] mod tests`, not in `tests/watcher.rs`.** Watcher is a stateful module (handle, worker thread, channel); the existing pattern for stateful Rust modules in this codebase is `mod tests` inside the module file. Integration tests in `tests/` are reserved for the IPC surface; the watcher has no IPC (it emits via the event bus, which the mock app silences). The 6 tests there exercise `start`/`stop` round-trips, external write detection, deletion detection, self-write suppression, hidden-dir rejection, and the `Missing -> Ready` recovery path.
+
+### Tests added
+
+- `src-tauri/src/index/ignore_set.rs` — 3 unit tests:
+  `consume_after_ttl_returns_false`, `record_twice_for_same_path_refreshes_ttl`,
+  and a baseline that records and consumes within TTL returns `true`.
+- `src-tauri/src/index/watcher_event.rs` — 2 unit tests for the
+  serde round-trip (tagged enum produces the camelCase wire shape).
+- `src-tauri/src/index/ingest_incremental.rs` — 5 unit tests
+  covering `apply_change` (insert / update / no-op-on-same-hash /
+  WAL-aware second connection) and `apply_deletion` (deletes
+  documents row + CASCADEs connections and tags).
+- `src-tauri/src/state.rs` — 3 unit tests for the new `ignore_set`
+  / `watcher` / `index_db_path` fields (default construction
+  sets them to `None` / empty; `set_active_vault` clears the
+  watcher slot).
+- `src-tauri/src/index/watcher.rs` — 6 integration tests with a
+  real `notify` watcher (200 ms debounce + 40-50 ms test poll
+  slack): `start_then_stop_then_start_works`,
+  `start_emits_event_on_external_write`,
+  `start_emits_deletion_event_on_file_remove`,
+  `start_ignores_dotfiles_and_obsidiana_dir`,
+  `start_ignores_self_writes_via_ignore_set`, and
+  `start_propagates_state_to_ready_on_first_event`.
+- `src-tauri/src/fs/note.rs` — 4 new unit tests proving each
+  mutator records its absolute path into the `IgnoreSet`
+  (`create_records_self_write_in_ignore_set`,
+  `write_records_self_write_in_ignore_set`,
+  `delete_records_self_write_in_ignore_set`,
+  `rename_records_both_paths_in_ignore_set`).
+- `src/__tests__/useWatcher.test.tsx` — 3 tests:
+  `subscribes via onFileChange on mount and unsubscribes on unmount`,
+  `forwards incoming events to the supplied handler`,
+  `does not subscribe when enabled is false`.
+- `src/__tests__/Editor.test.tsx` — 2 new tests for the
+  fs-change integration: `silently re-reads when an external
+  'changed' event arrives and the buffer is clean` (asserts
+  the read query refetches and no banner appears) and
+  `shows the fs-change-reload-needed placeholder when the buffer
+  is dirty` (asserts the banner appears). The watcher is
+  triggered via a test-only `watcherRegistry` exposed from
+  `src/__tests__/setup.tsx`.
+- `src/__tests__/setup.tsx` — adds the `watcherRegistry` +
+  `triggerWatcherChange` helpers, and mocks `@tauri-apps/api/event`
+  with a no-op `listen` so the existing Editor tests don't hit
+  the real Tauri internals.
+
+### What's NOT in 3.2 (deferred to 3.2.1 / 3.3)
+
+- **Visible Reload / Discard buttons on the `fs-change-reload-needed`
+  banner.** 3.2.1. For 3.2.0 the banner is informational; the
+  user can still discard by switching to a different file and
+  back.
+- **Per-file re-extraction diff for `content_hash`-driven skips.**
+  The watcher's `apply_change` always re-extracts the file. With
+  `content_hash` on the schema, an early-out is a small follow-up.
+- **Real-time link refactor on rename / move.** 3.3. The watcher
+  emits a `deleted` event for the old path and a `changed` event
+  for the new path, so the index ends up consistent (old note
+  gone, new note present), but `connections.source_path` /
+  `target_path` rows for the renamed note need a separate scan.
+- **WAL checkpoint on close.** 3.1.x already noted this; a long
+  watcher session accumulates WAL frames.
+- **Per-vault worker pool.** Today there is at most one watcher
+  per app instance, scoped to the active vault. Multiple-vault
+  workflow is a stage 5+ concern (after Git sync multi-vault).
 
 ## Open Questions / Backlog
 

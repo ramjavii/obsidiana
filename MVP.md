@@ -52,7 +52,9 @@ Indexing & graph:
 - [x] SQLite index of documents, connections, and tags
   - [x] 3.1: schema migrations + handle + integrity check; `index_status` and `rebuild_index` IPC; status chip in the header (see `docs/architecture.md` for ADR notes)
   - [x] 3.1.x: document/connection/tag ingestion from the existing preprocessor pipeline; indexer task kept in sync with vault opens
-  - [ ] 3.2: debounced filesystem watcher (200 ms) keeping the index in sync
+  - [x] 3.2: debounced filesystem watcher (200 ms) keeping the index in sync
+    - 200 ms `notify` + `notify-debouncer-mini` debouncer over the vault root; ignores dotfiles, hidden-dir components, `.obsidiana/`, `.db`/`.db-wal`/`.db-shm`, paths outside the vault, and self-writes recorded into a 1 s TTL `IgnoreSet` (see `docs/architecture.md` 3.2 section)
+    - Tauri event bus: `obsidiana://fs-change` with `WatcherChange = { kind: "changed", path } | { kind: "deleted", path }`; emitted from the worker thread, consumed in the Editor via `useWatcher` (silent re-read on clean buffer, `data-testid="fs-change-reload-needed"` placeholder banner on dirty buffer; visible Reload/Discard banner is a 3.2.1 follow-up)
   - [ ] 3.3: real-time link refactor on file rename/move
 - [ ] Force-directed graph view (repulsion + link tension + gravity)
 - [ ] Local graph filter (N-hop neighborhood of the active note)
