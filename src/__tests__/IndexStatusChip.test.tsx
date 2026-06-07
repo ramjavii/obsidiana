@@ -20,16 +20,15 @@ beforeEach(() => {
   invokeMock.mockReset();
 });
 
-it("renders the ready state with the document count", async () => {
+it("renders the ready state as a minimal indicator", async () => {
   invokeMock.mockImplementation((cmd) => {
     if (cmd === "index_status") return Promise.resolve(makeStatus("ready", { documentCount: 42 }));
     return Promise.resolve(null);
   });
   renderWithProviders(<IndexStatusChip />);
   await waitFor(() => {
-    expect(screen.getByTestId("index-status-chip")).toHaveTextContent("Indexed · 42 docs");
+    expect(screen.getByTestId("index-status-chip")).toHaveAttribute("data-index-state", "ready");
   });
-  expect(screen.getByTestId("index-status-chip")).toHaveAttribute("data-index-state", "ready");
 });
 
 it("renders the indexing state with the pulse animation", async () => {

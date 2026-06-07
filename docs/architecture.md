@@ -35,16 +35,15 @@ obsidiana/
 ├── postcss.config.js
 ├── spec.md                              # technical spec
 ├── src/                                 # frontend (React 18 + TS strict + Tailwind)
-│   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher> + <EditorModeToggle> + right-pane tab strip (Tags/Backlinks toggle, 2.8/2.9)
+│   ├── App.tsx                          # vault state router: <EmptyState> | <Shell> with <VaultSwitcher> + right-pane tab strip (Tags/Backlinks toggle); editor always in Live Preview (no mode toggle)
 │   ├── components/
 │   │   ├── BacklinkItem.tsx             # single clickable backlink row: title + path (2.9)
 │   │   ├── BacklinksPanel.tsx           # right-pane panel: count + BacklinkItem list + error/empty states (2.9)
-│   │   ├── Editor.tsx                   # CodeMirror 6 wrapper: autosave 500ms, Ctrl/Cmd+S, status chip, close (1.5); mode prop (2.7)
-│   │   ├── EditorModeToggle.tsx         # 3-button Source / Live Preview / Reading view segmented control (2.7)
+│   │   ├── Editor.tsx                   # CodeMirror 6 wrapper: autosave 500ms, Ctrl/Cmd+S, status chip, close; always Live Preview (mode-free after view-mode removal)
 │   │   ├── EmptyState.tsx               # "Open vault…" full-window view (first launch)
 │   │   ├── FileTree.tsx                 # recursive tree: expand dirs, right-click menu, select files
-│   │   ├── IndexStatusChip.tsx          # header chip with 5 visual states (missing/indexing/ready/broken/failed) + Rebuild button; 'Indexing N/M' and 'Indexed · N docs' labels (3.1.3, 3.1.x)
-│   │   ├── ReadingView.tsx              # sanitized-HTML read-only render via dangerouslySetInnerHTML (2.7)
+│   │   ├── IndexStatusChip.tsx          # header chip with 5 visual states (missing/indexing/ready/broken/failed) + Rebuild button; 'Indexing N/M' label; ready state is a minimal green indicator (no "Indexed · N docs" label)
+│   │   ├── ReadingView.tsx              # sanitized-HTML read-only render (unused in production after view-mode removal; kept for existing test)
 │   │   ├── TagChip.tsx                  # #name chip; button when onClick, span otherwise (2.8)
 │   │   ├── TagList.tsx                  # flex-wrap chip row with empty state (2.8)
 │   │   ├── TagsPanel.tsx                # right-pane panel: count + TagList + error state (2.8)
@@ -62,7 +61,7 @@ obsidiana/
 │   │   ├── useMarkdown.ts               # useExtractWikilinks + useResolveWikilink + useRenderMarkdown + useWikilinkResolutionMap + useGetTagsForNote + useGetBacklinks (2.1, 2.2, 2.6, 2.8, 2.9)
 │   │   ├── useNote.ts                   # useReadNote + useWriteNoteMutation (optimistic, rollback, tree invalidation) (1.5)
 │   │   ├── useToastStore.ts             # Zustand store + reportAppError() / reportError()
-│   │   ├── useVault.ts                  # useVaultStatus + pick/open/close/force mutations
+│   │   ├── useVault.ts                  # useVaultStatus + pick/open/close/force mutations; invalidates ["tree"] on vault change
 │   │   └── useWatcher.ts                # useWatcher(handler, { enabled }) — subscribes to Tauri event 'obsidiana://fs-change' (3.2)
 │   ├── ipc.ts                           # typed invoke() wrapper → IpcResult<T>
 │   ├── ipc/
@@ -81,13 +80,13 @@ obsidiana/
 │   │   ├── tree.ts                      # TreeNode / TreeNodeKind / NoteContent / RenameReport
 │   │   └── vault.ts                     # VaultInfo / RecentVault / VaultStatus shapes
 │   └── __tests__/
-│       ├── App.test.tsx                 # EmptyState + Shell + sidebar + dev panel + ?dev=1 trigger + editor + right-pane TagsPanel/BacklinksPanel + IndexStatusChip integration (1.1, 2.8, 2.9, 3.1.3)
+│       ├── App.test.tsx                 # EmptyState + Shell + sidebar + dev panel + ?dev=1 trigger + editor + right-pane TagsPanel/BacklinksPanel + IndexStatusChip; Reading-view test removed with mode toggle (1.1, 2.8, 2.9, 3.1.3, 2026-06-07)
 │       ├── BacklinkItem.test.tsx        # render title+path, click fires onClick, no-onClick renders (2.9)
 │       ├── BacklinksPanel.test.tsx      # IPC call, count, empty, error, data-backlinks-path (2.9)
 │       ├── Editor.test.tsx              # render, autosave gate, error chip + toast, close, path-change destroys view (1.5)
 │       ├── EmptyState.test.tsx          # renders, click triggers pick_vault, surfaces error
 │       ├── FileTree.test.tsx            # expand/collapse, select, right-click menu, mutations
-│       ├── IndexStatusChip.test.tsx     # 6 tests: 5 visual states (missing/indexing/ready/broken/failed) + 'Indexing N/M' progress + Rebuild click (3.1.3, 3.1.x)
+│       ├── IndexStatusChip.test.tsx     # 6 tests: 5 visual states + progress + Rebuild click; ready state renders minimal indicator (no "Indexed · N docs")
 │       ├── TagChip.test.tsx             # renders #name, button vs span, onClick forwarding (2.8)
 │       ├── TagList.test.tsx             # renders chips, empty state, custom empty text, onTagClick (2.8)
 │       ├── TagsPanel.test.tsx           # IPC fire, count, error, empty, data-tag-path (2.8)
@@ -117,6 +116,7 @@ obsidiana/
 │   ├── src/
 │   │   ├── commands/
 │   │   │   ├── error_demo.rs           # ping_or_fail: dev-only error-surface fixture
+│   │   │   ├── graph.rs                 # graph_snapshot: nodes + links from index DB; LEFT JOIN on target_path (not NULL resolved_target_id); wrapped in spawn_blocking (4.1 fix)
 │   │   │   ├── index.rs                # index_status / rebuild_index (3.1.2)
 │   │   │   ├── markdown.rs              # extract_wikilinks (2.1) + resolve_wikilink (2.2) + render_markdown (2.6) + get_tags_for_note (2.8) + get_backlinks (2.9)
 │   │   │   ├── mod.rs
@@ -235,6 +235,10 @@ obsidiana/
 | 2026-06-06 | **3.2 `path.exists()` distinguishes `changed` from `deleted` after a `DebouncedEvent`.** `notify-debouncer-mini`'s `DebouncedEventKind` only reports `Any` or `AnyContinuous`. | The pre-existing 3.1.x filter `is_hidden` / `is_allowed_note` is the basis for the path-component check; we extend it with a leading-dot segment test instead of a `path.file_name().to_str().starts_with('.')` test, because tempdirs on Linux have leading dots (`/tmp/.tmpXXXXXX`) and would otherwise false-positive. The check is RELATIVE to the vault root (`path.strip_prefix(root).components()`), not over the full path. |
 | 2026-06-06 | **3.2 Wire-up fix: the async `pick_vault` / `open_vault` / `open_vault_force` wrappers now call `start_kick_off_and_watcher(app, state, root)`, which runs `kick_off_index_open` + `watcher::start` in that order.** The `close_vault` async wrapper now calls `watcher::stop` (releases the worker thread) and `kick_off::reset_index_status` (clears `state.index_db_path`) on its way out. | The 3.1.x production path on these async wrappers never started the indexer on vault open — the test path called `kick_off_index_open` directly. The `IndexStatusChip` would stay `Missing` until a manual rebuild. 3.2 closes that loop. The helper is private to `commands/vault.rs`; tests that need finer-grained control (e.g., `tests/index_db.rs`) still call `_inner` + `kick_off_index_open` directly. |
 | 2026-06-06 | **3.2 `index_status` polling stays on a 2 s interval; the event bus is used only for the file-changed signal.** | The 5-state chip's `Indexing N/M` progress is set by Rust (`on_progress` callback) — there is nothing for an event to push. The watcher's emitted event is the only push in the system, and the Editor is its only consumer (via `useWatcher`). When more events land (3.3 rename refactor, eventually 5.x Git sync notifications), the same `app.emit(channel, payload)` pattern is used. |
+| 2026-06-07 | **Post-4.3 bug-fix batch: removed 3-mode toggle (Source/Live Preview/Reading), always Live Preview.** The `<EditorModeToggle>` component and `ReadingView` usage in `Editor.tsx` are deleted. `useEditorModeStore` is kept but unused in production (only its tests reference it). The `mode` prop is stripped from `<Editor>`. | The user reported the 3-mode system as unwanted; they want a single rendered editing experience like Obsidian's default. Removing the toggle also fixes the "black screen on mode switch" bug (the effect's missing `mode` dep). The store is preserved so tests don't break; it can be deleted later. |
+| 2026-06-07 | **Post-4.3 bug-fix batch: graph_snapshot now LEFT JOINs on `connections.target_path` instead of the always-NULL `resolved_target_id`.** The command body is wrapped in `tauri::async_runtime::spawn_blocking`. | Neither `ingest` nor `ingest_incremental` populate `resolved_target_id`, so the original INNER JOIN returned zero links. `COALESCE(tgt.file_path, c.target_path)` ensures broken wikilinks also appear in the graph. The `spawn_blocking` wrapper satisfies the AGENTS.md "blocking I/O must not starve the IPC thread" rule. |
+| 2026-06-07 | **Post-4.3 bug-fix batch: IndexStatusChip ready state is now a minimal green indicator with no text label.** The "Indexed · N docs" label is replaced with an empty string. | The user explicitly requested "delete label for indexed". The chip still shows its data-testid and data-index-state attributes for tests; visual state is indicated only by the background color. |
+| 2026-06-07 | **Post-4.3 bug-fix batch: vault mutations now invalidate the tree cache (`["tree"]` query prefix) in addition to the vault status key.** | When the vault root changes (pick/open/force/close), the file tree was not refreshing. Adding `queryClient.invalidateQueries({ queryKey: ["tree"] })` to `useVaultMutation.onSuccess` ensures the `useTreeChildren(null)` query refetches. The same prefix catches all expanded subdirectory caches. |
 
 ## Toolchain
 
@@ -274,6 +278,7 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `rebuild_index` — drops any existing `<vault>/.obsidiana/index.db`, reopens the connection, runs the schema migrations, and runs the `ingest_all` engine to repopulate `documents` / `connections` / `tags`. The snapshot flips to `Indexing` with live `(indexed, total)` updates from the `on_progress` callback, then to `Ready` (or `Failed` on error) when the transaction commits. Returns `Ok(())` on success; `AppError::Busy` if a rebuild is already in flight; `AppError::InvalidArgument` if no vault is open. (micro-feature 3.1.2; ingest wired in 3.1.x)
 - *no new IPC in 3.2* — the filesystem watcher is the first feature to use the **Tauri event bus** as its delivery mechanism. The Rust worker thread emits `WatcherChange` payloads on the `obsidiana://fs-change` channel via `app.emit(channel, payload)`. The TS `onFileChange` wrapper in `src/ipc/watcher.ts` subscribes via `@tauri-apps/api/event::listen`. The `IndexStatusChip` polling loop is **unchanged** in 3.2 — only the file-changed signal moves to events. (micro-feature 3.2)
 - *no new IPC in 3.3* — the existing `rename_note` IPC now updates the SQLite index atomically inside `rename_note_in` via `apply_rename`. The index update preserves the document `id` (so outgoing connections survive) and rewrites incoming `connections.target_path` rows. Errors are logged but do not fail the rename; the next `rebuild_index` heals the index. (micro-feature 3.3)
+- `graph_snapshot` — returns `GraphData { nodes: Vec<GraphNode>, links: Vec<GraphLink> }`. Nodes are all `documents`; links join `connections.source_id` → `documents.id` and LEFT JOIN `documents.file_path` on `connections.target_path` (wrapped in `spawn_blocking`). Broken wikilinks appear as links to the raw `target_path`. (micro-feature 4.1; fixed 2026-06-07: was joining on the always-NULL `resolved_target_id`)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 

@@ -12,7 +12,7 @@ function classFor(state: IndexStatus["state"]): string {
     case "indexing":
       return "bg-zinc-800 text-zinc-200 animate-pulse";
     case "ready":
-      return "bg-emerald-900 text-emerald-200";
+      return "bg-emerald-800/30";
     case "broken":
       return "bg-amber-900 text-amber-100 cursor-pointer hover:bg-amber-800";
     case "failed":
@@ -33,7 +33,7 @@ function labelFor(status: IndexStatus): string {
       return `Indexing ${indexed}/${total}`;
     }
     case "ready":
-      return `Indexed · ${status.documentCount} docs`;
+      return "";
     case "broken":
       return "Index corrupt — click to rebuild";
     case "failed":

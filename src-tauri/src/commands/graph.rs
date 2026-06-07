@@ -2,7 +2,7 @@ use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use rusqlite::Connection;
 use serde::Serialize;
-use tauri::State;
+use std::path::PathBuf;
 
 use super::tree::require_vault_root;
 
@@ -28,58 +28,63 @@ pub struct GraphData {
 }
 
 #[tauri::command]
-pub async fn graph_snapshot(state: State<'_, AppState>) -> AppResult<GraphData> {
+pub async fn graph_snapshot(state: tauri::State<'_, AppState>) -> AppResult<GraphData> {
     let _vault_root = require_vault_root(&state)?;
 
-    let db_path = {
+    let db_path: Option<PathBuf> = {
         let guard = state
             .index_db_path
             .lock()
             .map_err(|e| AppError::internal(format!("index_db_path lock: {e}")))?;
         guard.clone()
     };
-    let Some(db_path) = db_path else {
-        return Ok(GraphData {
-            nodes: vec![],
-            links: vec![],
-        });
-    };
 
-    let conn = Connection::open(&db_path)
-        .map_err(|e| AppError::internal(format!("open index db: {e}")))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(db_path) = db_path else {
+            return Ok(GraphData {
+                nodes: vec![],
+                links: vec![],
+            });
+        };
 
-    let mut node_stmt = conn
-        .prepare("SELECT file_path, title FROM documents")
-        .map_err(|e| AppError::internal(format!("prepare nodes: {e}")))?;
-    let nodes = node_stmt
-        .query_map([], |row| {
-            Ok(GraphNode {
-                id: row.get(0)?,
-                title: row.get(1)?,
+        let conn = Connection::open(&db_path)
+            .map_err(|e| AppError::internal(format!("open index db: {e}")))?;
+
+        let mut node_stmt = conn
+            .prepare("SELECT file_path, title FROM documents")
+            .map_err(|e| AppError::internal(format!("prepare nodes: {e}")))?;
+        let nodes: Vec<GraphNode> = node_stmt
+            .query_map([], |row| {
+                Ok(GraphNode {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                })
             })
-        })
-        .map_err(|e| AppError::internal(format!("query nodes: {e}")))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| AppError::internal(format!("collect nodes: {e}")))?;
+            .map_err(|e| AppError::internal(format!("query nodes: {e}")))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::internal(format!("collect nodes: {e}")))?;
 
-    let mut link_stmt = conn
-        .prepare(
-            "SELECT src.file_path, tgt.file_path
-             FROM connections c
-             JOIN documents src ON src.id = c.source_id
-             JOIN documents tgt ON tgt.id = c.resolved_target_id",
-        )
-        .map_err(|e| AppError::internal(format!("prepare links: {e}")))?;
-    let links = link_stmt
-        .query_map([], |row| {
-            Ok(GraphLink {
-                source: row.get(0)?,
-                target: row.get(1)?,
+        let mut link_stmt = conn
+            .prepare(
+                "SELECT src.file_path, COALESCE(tgt.file_path, c.target_path)
+                 FROM connections c
+                 JOIN documents src ON src.id = c.source_id
+                 LEFT JOIN documents tgt ON tgt.file_path = c.target_path",
+            )
+            .map_err(|e| AppError::internal(format!("prepare links: {e}")))?;
+        let links: Vec<GraphLink> = link_stmt
+            .query_map([], |row| {
+                Ok(GraphLink {
+                    source: row.get(0)?,
+                    target: row.get(1)?,
+                })
             })
-        })
-        .map_err(|e| AppError::internal(format!("query links: {e}")))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| AppError::internal(format!("collect links: {e}")))?;
+            .map_err(|e| AppError::internal(format!("query links: {e}")))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::internal(format!("collect links: {e}")))?;
 
-    Ok(GraphData { nodes, links })
+        Ok(GraphData { nodes, links })
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("spawn_blocking: {e}")))?
 }

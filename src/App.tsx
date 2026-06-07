@@ -11,9 +11,7 @@ import { TagsPanel } from "@/components/TagsPanel";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
 import { GraphView } from "@/components/GraphView";
 import { IndexStatusChip } from "@/components/IndexStatusChip";
-import { EditorModeToggle } from "@/components/EditorModeToggle";
 import { useVaultStatus } from "@/hooks/useVault";
-import { useEditorModeStore } from "@/hooks/useEditorModeStore";
 import {
   brokenWikilinkPath,
   useCreateNoteMutation,
@@ -77,7 +75,6 @@ function Shell() {
   const [selectedPath, setSelectedPath] = useState<string>("");
   const [rightTab, setRightTab] = useState<"tags" | "backlinks" | "graph">("tags");
   const createMutation = useCreateNoteMutation();
-  const mode = useEditorModeStore((s) => s.mode);
 
   if (status.kind !== "open") return <EmptyState />;
 
@@ -110,7 +107,6 @@ function Shell() {
         <span className="text-sm font-semibold tracking-tight">OBSIDIANA</span>
         <VaultSwitcher vault={status.vault} />
         <IndexStatusChip />
-        {selectedPath && <EditorModeToggle />}
         {isDevMode() && <DevPanel />}
       </header>
       <main className="flex flex-1 overflow-hidden">
@@ -130,7 +126,6 @@ function Shell() {
               onClose={() => setSelectedPath("")}
               onJump={handleJump}
               onBrokenClick={handleBrokenClick}
-              mode={mode}
             />
           ) : (
             <div

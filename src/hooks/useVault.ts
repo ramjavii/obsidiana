@@ -74,6 +74,7 @@ function useVaultMutation<TArgs, TResult>(
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: VAULT_STATUS_KEY });
+      void queryClient.invalidateQueries({ queryKey: ["tree"] });
       onSuccess?.(result);
     },
   });

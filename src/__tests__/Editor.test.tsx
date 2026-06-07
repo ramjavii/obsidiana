@@ -459,7 +459,7 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
     });
   });
 
-  it("includes the inlineRender extension in the editor when mode='livePreview' (2.7 default)", async () => {
+  it("includes the inlineRender extension in the editor by default", async () => {
     invokeMock.mockImplementation((cmd: unknown) => {
       if (cmd === "read_note") {
         return Promise.resolve({
@@ -481,83 +481,17 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
       <Editor
         path="hello.md"
         onClose={() => undefined}
-        mode="livePreview"
       />,
       { wrapper: wrapperFactory() },
     );
     await screen.findByTestId("editor");
     await waitFor(() => {
       const hasInline = cmLastExtensions.some((e) => {
-        const wrapper = e as { __isCompartmentOf?: boolean; ext?: unknown } | undefined;
-        if (!wrapper || !wrapper.__isCompartmentOf) return false;
-        const inner = wrapper.ext as { __isInlineRender?: boolean };
-        return inner?.__isInlineRender === true;
+        if (e == null) return false;
+        return (e as { __isInlineRender?: boolean }).__isInlineRender === true;
       });
       expect(hasInline).toBe(true);
     });
-  });
-
-  it("omits the inlineRender extension when mode='source'", async () => {
-    invokeMock.mockImplementation((cmd: unknown) => {
-      if (cmd === "read_note") {
-        return Promise.resolve({
-          path: "hello.md",
-          content: "# hi",
-          modifiedAt: "2026-06-03T00:00:00Z",
-        });
-      }
-      return Promise.resolve(null);
-    });
-    render(
-      <Editor
-        path="hello.md"
-        onClose={() => undefined}
-        mode="source"
-      />,
-      { wrapper: wrapperFactory() },
-    );
-    await screen.findByTestId("editor");
-    await waitFor(() => {
-      const hasInline = cmLastExtensions.some((e) => {
-        const wrapper = e as { __isCompartmentOf?: boolean; ext?: unknown } | undefined;
-        if (!wrapper || !wrapper.__isCompartmentOf) return false;
-        const inner = wrapper.ext as { __isInlineRender?: boolean };
-        return inner?.__isInlineRender === true;
-      });
-      expect(hasInline).toBe(false);
-    });
-  });
-
-  it("mounts the ReadingView and not the CodeMirror editor when mode='reading'", async () => {
-    invokeMock.mockImplementation((cmd: unknown) => {
-      if (cmd === "read_note") {
-        return Promise.resolve({
-          path: "hello.md",
-          content: "# hi",
-          modifiedAt: "2026-06-03T00:00:00Z",
-        });
-      }
-      if (cmd === "render_markdown") {
-        return Promise.resolve({
-          html: "<h1>hi</h1><p>body</p>",
-          inlineSpans: [],
-          blockSpans: [],
-        });
-      }
-      return Promise.resolve(null);
-    });
-    render(
-      <Editor
-        path="hello.md"
-        onClose={() => undefined}
-        mode="reading"
-      />,
-      { wrapper: wrapperFactory() },
-    );
-    await waitFor(() => {
-      expect(screen.getByTestId("reading-view")).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId("editor-container")).not.toBeInTheDocument();
   });
 
   it("flushes the pending autosave when the path changes (regression: lost edits within 500ms debounce)", async () => {
