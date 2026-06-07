@@ -2365,6 +2365,39 @@ nearly transparent. Implemented via custom `nodeCanvasObject`.
 
 No new files; only `GraphView.tsx` modified.
 
+## Panel drag-resize and bare-name wikilink SQL fixes (post-4.3)
+
+**What it does:**
+
+1. **Draggable panel borders.** Sidebar (left) and right pane now have
+   visible drag handles between them and the editor section. Users can
+   click and drag the 4px strip to resize panels (min 160px, max 600px).
+   The toggle buttons (hamburger/chevron) remain visible at all times.
+   A reusable `DragHandle` component manages `mousedown`/`mousemove`/`mouseup`
+   with `user-select: none` and `cursor: col-resize` during drag.
+
+2. **Bare-name wikilink resolution in graph and backlinks queries.**
+   The `connections` table stores wikilink targets verbatim (e.g. `"note"`
+   for `[[note]]`), but `documents.file_path` includes the extension
+   (`"note.md"`). Two SQL fixes:
+   - `graph_snapshot` (graph.rs): added a second `LEFT JOIN` on
+     `tgt2.file_path = c.target_path || '.md'`, with
+     `COALESCE(tgt.file_path, tgt2.file_path, c.target_path)`.
+   - `get_backlinks` (markdown.rs): added `OR c.target_path = ?2` where
+     `?2` is the file stem (extension stripped).
+
+**Touched files:**
+```
+src/
+├── App.tsx                (DragHandle component + drag state + dynamic widths)
+├── __tests__/
+│   └── App.test.tsx       (updated assertions)
+src-tauri/src/
+├── commands/
+│   ├── graph.rs           (second LEFT JOIN for bare-name targets)
+│   └── markdown.rs        (OR c.target_path = bare_name in backlinks)
+```
+
 ## Open Questions / Backlog
 
 - ~~Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a
