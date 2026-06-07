@@ -20,6 +20,12 @@ export interface GraphData {
   links: GraphLink[];
 }
 
+export interface GraphFilter {
+  activePath?: string;
+  maxHops: number;
+  hideOrphans: boolean;
+}
+
 export type IndexStatus = {
   schemaVer: number;
   documentCount: number;

@@ -192,7 +192,7 @@ function Shell() {
             {rightTab === "tags" ? (
               <TagsPanel path={selectedPath} />
             ) : rightTab === "graph" ? (
-              <GraphView />
+              <GraphView activePath={selectedPath} />
             ) : (
               <BacklinksPanel
                 path={selectedPath}
