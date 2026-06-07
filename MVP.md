@@ -56,11 +56,12 @@ Indexing & graph:
   - [x] 3.1.x: document/connection/tag ingestion from the existing preprocessor pipeline; indexer task kept in sync with vault opens
   - [x] 3.2: debounced filesystem watcher (200 ms) keeping the index in sync
     - 200 ms `notify` + `notify-debouncer-mini` debouncer over the vault root; ignores dotfiles, hidden-dir components, `.obsidiana/`, `.db`/`.db-wal`/`.db-shm`, paths outside the vault, and self-writes recorded into a 1 s TTL `IgnoreSet` (see `docs/architecture.md` 3.2 section)
-    - Tauri event bus: `obsidiana://fs-change` with `WatcherChange = { kind: "changed", path } | { kind: "deleted", path }`; emitted from the worker thread, consumed in the Editor via `useWatcher` (silent re-read on clean buffer, `data-testid="fs-change-reload-needed"` placeholder banner on dirty buffer; visible Reload/Discard banner is a 3.2.1 follow-up)
+    - Tauri event bus: `obsidiana://fs-change` with `WatcherChange = { kind: "changed", path } | { kind: "deleted", path }`; emitted from the worker thread, consumed in the Editor via `useWatcher` (silent re-read on clean buffer, banner with Reload/Discard buttons on dirty buffer)
+  - [x] 3.2.1: visible Reload/Discard banner on dirty-buffer external changes
   - [x] 3.3: real-time link refactor on file rename/move
-- [ ] Force-directed graph view (repulsion + link tension + gravity)
-- [ ] Local graph filter (N-hop neighborhood of the active note)
-- [ ] Label opacity fading on zoom
+- [x] 4.1: Force-directed graph view (repulsion + link tension + gravity); `graph_snapshot` IPC; "Graph" tab in right pane
+- [ ] 4.2: Local graph filter (N-hop neighborhood of the active note)
+- [ ] 4.3: Label opacity fading on zoom
 
 Sync & publishing:
 
@@ -88,13 +89,12 @@ Explicitly out of MVP (deferred to a later stage):
 
 ## Current Stage
 
-`Current Stage: 3 — SQLite index + watcher`
+`Current Stage: 4 — Graph view`
 
-The 3.1 micro-feature (schema + handle + status IPC + rebuild IPC) and
-3.1.x (ingestion engine wiring) are both shipped; 3.2 watcher and 3.3
-rename refactor are the remaining sub-features in this stage. The
-header status chip and the `index-rebuild` slash command are the
-user-visible surfaces of 3.1.
+4.1 — Force-directed graph view — is shipped. 4.2 (local graph filter)
+and 4.3 (label opacity fading on zoom) are the remaining sub-features
+in this stage. The graph renders via `react-force-graph-2d` inside a
+"Graph" tab in the right pane alongside Tags and Backlinks.
 
 ## Notes & Decisions
 

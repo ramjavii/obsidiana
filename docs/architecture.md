@@ -2129,12 +2129,10 @@ now calls `watcher::stop` (releasing the worker thread) and
   with a no-op `listen` so the existing Editor tests don't hit
   the real Tauri internals.
 
-### What's NOT in 3.2 (deferred to 3.2.1 / 3.3)
+### What's NOT in 3.2 (deferred to later micro-features)
 
-- **Visible Reload / Discard buttons on the `fs-change-reload-needed`
-  banner.** 3.2.1. For 3.2.0 the banner is informational; the
-  user can still discard by switching to a different file and
-  back.
+- ~~**Visible Reload / Discard buttons on the `fs-change-reload-needed`
+  banner.**~~ Delivered in 3.2.1.
 - **Per-file re-extraction diff for `content_hash`-driven skips.**
   The watcher's `apply_change` always re-extracts the file. With
   `content_hash` on the schema, an early-out is a small follow-up.
@@ -2148,6 +2146,44 @@ now calls `watcher::stop` (releasing the worker thread) and
 - **Per-vault worker pool.** Today there is at most one watcher
   per app instance, scoped to the active vault. Multiple-vault
   workflow is a stage 5+ concern (after Git sync multi-vault).
+
+## Reload/Discard banner (micro-feature 3.2.1)
+
+**What it does:** When the user has unsaved edits (dirty buffer) and
+the filesystem watcher reports a change to the same file, the
+placeholder informational banner is replaced with two actionable
+buttons: **Reload** and **Discard**. Both buttons re-read the file
+from disk, discarding the in-editor changes.
+
+**Implementation:**
+
+- `Editor.tsx` replaces the `fs-change-reload-needed` placeholder div
+  with a flex-row banner containing "File changed on disk." text and
+  two buttons (Reload, Discard). Each button calls `handleReload` /
+  `handleDiscard` which set `needsReload(false)` and invoke
+  `queryClient.invalidateQueries({ queryKey: noteKey(path) })`.
+  The existing `useEffect` on `[path, read.data, write]` picks up the
+  new content and replaces the editor buffer, effectively discarding
+  the dirty edits.
+- Both buttons do the same action in MVP (discard + reload from disk).
+  A future iteration could differentiate (e.g., Reload auto-saves first,
+  Discard drops without saving).
+
+**Touched files:**
+```
+src/
+├── components/
+│   └── Editor.tsx               # +handleReload, handleDiscard callbacks + banner buttons
+└── __tests__/
+    └── Editor.test.tsx          # 2 new tests (Reload click, Discard click)
+```
+
+**Test coverage:**
+- `src/__tests__/Editor.test.tsx` — "clicking Reload on the fs-change
+  banner discards edits and re-reads the file" (asserts the banner
+  disappears and `read_note` fires again) and "clicking Discard on the
+  fs-change banner discards edits and re-reads the file" (same flow
+  for the Discard button).
 
 ## Rename refactor (micro-feature 3.3)
 
@@ -2203,12 +2239,79 @@ rename — the next `rebuild_index` heals the index.
 - **`WatcherEvent::Renamed` variant + frontend reconcile** for the currently-open note.
 - **Tabs / "saved to <new path>" badge** (spec §6.4, needs 1.5.1+).
 
+## Graph view (micro-feature 4.1)
+
+**What it does:** Renders a force-directed graph of all indexed
+documents and their wikilink connections inside a new "Graph" tab
+in the right pane (alongside Tags and Backlinks). The graph uses
+`react-force-graph-2d` Canvas backend.
+
+**Architecture:**
+
+`src-tauri/src/commands/graph.rs` — new file exposing the
+`graph_snapshot` IPC command. Opens a fresh `Connection` to the
+index DB (same pattern as `get_backlinks`) and executes two queries:
+
+1. `SELECT file_path, title FROM documents` → `GraphNode { id, title }`
+2. `SELECT src.file_path, tgt.file_path FROM connections c
+   JOIN documents src ON src.id = c.source_id
+   JOIN documents tgt ON tgt.id = c.resolved_target_id`
+   → `GraphLink { source, target }`
+
+Only resolved connections (`resolved_target_id IS NOT NULL`) are
+included so broken wikilinks do not clutter the graph.
+
+**Frontend:**
+
+- `src/types/index.ts` — adds `GraphNode`, `GraphLink`, `GraphData`.
+- `src/ipc/graph.ts` — async wrapper calling `graph_snapshot`.
+- `src/components/GraphView.tsx` — uses `useQuery<GraphData, AppError>`
+  to fetch data and renders `ForceGraph2D` with emerald nodes on a
+  near-black background. Handles loading / error / empty states.
+- `src/App.tsx` — adds `"graph"` to the `rightTab` union type, a
+  "Graph" tab button, and renders `<GraphView />` when selected.
+
+All existing right-pane tab behaviour (Tags, Backlinks) is preserved.
+
+**Touched files:**
+```
+src-tauri/src/
+├── commands/
+│   ├── graph.rs       (new — graph_snapshot command)
+│   └── mod.rs         (pub mod graph)
+└── lib.rs             (register graph_snapshot)
+src/
+├── types/index.ts     (GraphNode, GraphLink, GraphData)
+├── ipc/graph.ts       (new — getGraphSnapshot wrapper)
+├── components/
+│   └── GraphView.tsx  (new — component with ForceGraph2D)
+├── App.tsx            (+ "graph" tab + rendering)
+└── __tests__/
+    └── GraphView.test.tsx  (5 tests)
+```
+
+**Test coverage:**
+- `GraphView.test.tsx` — 5 tests: calls `graph_snapshot` IPC on mount,
+  shows loading indicator, shows empty state when no nodes, shows
+  error state on rejection, renders mock `ForceGraph2D` when data
+  arrives. `react-force-graph-2d` is mocked via `vi.mock` because
+  jsdom lacks Canvas/WebGL support.
+
+**Decision row (4.1):**
+
+| Question | Answer | Why |
+| --- | --- | --- |
+| 2D or 3D? | 2D (`react-force-graph-2d`). | Simpler, faster, better perf. 3D can be swapped later. |
+| All nodes or capped? | All nodes (no cap). | 1,000-node cap is deferred to 4.2 (local filter). |
+| Include broken links? | No. | Only `resolved_target_id IS NOT NULL`. |
+| Where does the Graph tab go? | Right pane, after Backlinks. | Matches spec §5 UI hierarchy (`<RightPane>` tabs: Backlinks \| Graph \| Git). |
+
 ## Open Questions / Backlog
 
 - ~~Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a
   Web Worker. Decide in micro-feature 2.5 (Live Preview / WYSIWYG editor).~~ Resolved 2026-06-05 — ADR-001: Rust `markdown-rs`. See the ADR section above.
   No longer a "sometime in stage 2" question; it's the first thing 2.5 blocks on.
-- Decide on `react-force-graph` 2D vs 3D mode at implementation time.
+- ~~Decide on `react-force-graph` 2D vs 3D mode at implementation time.~~ Resolved 2026-06-07 — 2D (`react-force-graph-2d`).
 - Embedded opencode terminal panel: implementation surface is a
   `tauri-plugin-shell` child process (`opencode` CLI) with the vault as CWD,
   embedded as a xterm.js panel in a dockable sidebar. Needs an ADR before

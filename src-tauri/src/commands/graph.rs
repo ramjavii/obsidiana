@@ -1,0 +1,85 @@
+use crate::error::{AppError, AppResult};
+use crate::state::AppState;
+use rusqlite::Connection;
+use serde::Serialize;
+use tauri::State;
+
+use super::tree::require_vault_root;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphNode {
+    pub id: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphLink {
+    pub source: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphData {
+    pub nodes: Vec<GraphNode>,
+    pub links: Vec<GraphLink>,
+}
+
+#[tauri::command]
+pub async fn graph_snapshot(state: State<'_, AppState>) -> AppResult<GraphData> {
+    let _vault_root = require_vault_root(&state)?;
+
+    let db_path = {
+        let guard = state
+            .index_db_path
+            .lock()
+            .map_err(|e| AppError::internal(format!("index_db_path lock: {e}")))?;
+        guard.clone()
+    };
+    let Some(db_path) = db_path else {
+        return Ok(GraphData {
+            nodes: vec![],
+            links: vec![],
+        });
+    };
+
+    let conn = Connection::open(&db_path)
+        .map_err(|e| AppError::internal(format!("open index db: {e}")))?;
+
+    let mut node_stmt = conn
+        .prepare("SELECT file_path, title FROM documents")
+        .map_err(|e| AppError::internal(format!("prepare nodes: {e}")))?;
+    let nodes = node_stmt
+        .query_map([], |row| {
+            Ok(GraphNode {
+                id: row.get(0)?,
+                title: row.get(1)?,
+            })
+        })
+        .map_err(|e| AppError::internal(format!("query nodes: {e}")))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| AppError::internal(format!("collect nodes: {e}")))?;
+
+    let mut link_stmt = conn
+        .prepare(
+            "SELECT src.file_path, tgt.file_path
+             FROM connections c
+             JOIN documents src ON src.id = c.source_id
+             JOIN documents tgt ON tgt.id = c.resolved_target_id",
+        )
+        .map_err(|e| AppError::internal(format!("prepare links: {e}")))?;
+    let links = link_stmt
+        .query_map([], |row| {
+            Ok(GraphLink {
+                source: row.get(0)?,
+                target: row.get(1)?,
+            })
+        })
+        .map_err(|e| AppError::internal(format!("query links: {e}")))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| AppError::internal(format!("collect links: {e}")))?;
+
+    Ok(GraphData { nodes, links })
+}

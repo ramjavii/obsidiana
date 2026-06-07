@@ -56,6 +56,7 @@ pub fn run() {
             commands::markdown::get_backlinks,
             commands::index::index_status,
             commands::index::rebuild_index,
+            commands::graph::graph_snapshot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

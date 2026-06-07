@@ -3,6 +3,14 @@
 This file governs how AI agents (opencode, feature-loop) work on this codebase.
 It is loaded by opencode on every session. Keep it concrete and current.
 
+## Git workflow
+
+Per-micro-feature branches. `main` is updated only on tagged releases;
+the squash-to-`main` ritual lives in the `github-workflow` skill
+(§3 + §9B). **Never** commit directly to `main`; **never** merge a
+feature branch into `main` until the next micro-feature is being
+started. Every micro-feature ships as its own branch on origin first.
+
 ## Tech Stack Enforcement
 
 These are hard rules. Do not propose alternatives without a written ADR in

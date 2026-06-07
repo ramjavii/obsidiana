@@ -9,6 +9,7 @@ import { FileTree } from "@/components/FileTree";
 import { Editor } from "@/components/Editor";
 import { TagsPanel } from "@/components/TagsPanel";
 import { BacklinksPanel } from "@/components/BacklinksPanel";
+import { GraphView } from "@/components/GraphView";
 import { IndexStatusChip } from "@/components/IndexStatusChip";
 import { EditorModeToggle } from "@/components/EditorModeToggle";
 import { useVaultStatus } from "@/hooks/useVault";
@@ -74,7 +75,7 @@ function DevPanel() {
 function Shell() {
   const { status } = useVaultStatus();
   const [selectedPath, setSelectedPath] = useState<string>("");
-  const [rightTab, setRightTab] = useState<"tags" | "backlinks">("tags");
+  const [rightTab, setRightTab] = useState<"tags" | "backlinks" | "graph">("tags");
   const createMutation = useCreateNoteMutation();
   const mode = useEditorModeStore((s) => s.mode);
 
@@ -173,9 +174,25 @@ function Shell() {
               >
                 Backlinks
               </button>
+              <button
+                type="button"
+                role="tab"
+                data-testid="tab-graph"
+                aria-selected={rightTab === "graph"}
+                onClick={() => setRightTab("graph")}
+                className={`flex-1 px-3 py-2 ${
+                  rightTab === "graph"
+                    ? "text-zinc-100 border-b-2 border-emerald-500"
+                    : "text-zinc-500"
+                }`}
+              >
+                Graph
+              </button>
             </div>
             {rightTab === "tags" ? (
               <TagsPanel path={selectedPath} />
+            ) : rightTab === "graph" ? (
+              <GraphView />
             ) : (
               <BacklinksPanel
                 path={selectedPath}

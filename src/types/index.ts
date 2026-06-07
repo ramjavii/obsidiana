@@ -5,6 +5,21 @@ export type IndexStateKind =
   | "broken"
   | "failed";
 
+export interface GraphNode {
+  id: string;
+  title: string;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
 export type IndexStatus = {
   schemaVer: number;
   documentCount: number;
