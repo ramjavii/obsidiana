@@ -119,7 +119,7 @@ function Shell() {
             onSelect={handleSelect}
           />
         </aside>
-        <section className="flex-1 overflow-hidden">
+        <section className="flex flex-1 overflow-hidden">
           {selectedPath ? (
             <Editor
               path={selectedPath}
