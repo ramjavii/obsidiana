@@ -85,6 +85,16 @@ function computeNhopNeighborhood(
   return { nodes: filteredNodes, links: filteredLinks };
 }
 
+function computeDegree(links: GraphLink[]): Map<string, number> {
+  const degree = new Map<string, number>();
+  for (const link of links) {
+    const [srcId, tgtId] = getLinkEndpoints(link);
+    degree.set(srcId, (degree.get(srcId) ?? 0) + 1);
+    degree.set(tgtId, (degree.get(tgtId) ?? 0) + 1);
+  }
+  return degree;
+}
+
 type Props = {
   activePath?: string;
   onNodeClick?: (path: string) => void;
@@ -118,6 +128,11 @@ export function GraphView({ activePath, onNodeClick }: Props) {
     queryKey: ["graph"],
     queryFn: getGraphSnapshot,
   });
+
+  const degreeMap = useMemo(
+    () => (query.data ? computeDegree(query.data.links) : new Map<string, number>()),
+    [query.data],
+  );
 
   const filtered = useMemo(() => {
     const data = query.data;
@@ -212,22 +227,29 @@ export function GraphView({ activePath, onNodeClick }: Props) {
         <ForceGraph2D
           graphData={filtered ?? { nodes: [], links: [] }}
           nodeLabel="title"
-          nodeColor={() => "#10b981"}
-          linkColor={() => "#52525b"}
+          nodeRelSize={6}
+          nodeVal={(node) => {
+            const deg = degreeMap.get((node as GraphNode).id) ?? 0;
+            return 1 + deg * 2;
+          }}
+          nodeColor={(node) => (node as GraphNode).id === activePath ? "#10b981" : "#52525b"}
+          linkColor={() => "#3f3f46"}
+          linkWidth={0.5}
           backgroundColor="#09090b"
           width={graphSize.width}
           height={graphSize.height}
           onNodeClick={(node) => onNodeClick?.((node as { id: string }).id)}
           nodeCanvasObjectMode={() => "after"}
           nodeCanvasObject={(node, ctx, globalScale) => {
-            const label = node.title ?? node.id ?? "";
-            const fontSize = 10 / globalScale;
-            const opacity = Math.min(1, Math.max(0, (globalScale - 0.3) / 0.7));
-            ctx.font = `${fontSize}px Sans-Serif`;
+            const n = node as GraphNode;
+            const label = n.title ?? n.id ?? "";
+            const deg = degreeMap.get(n.id) ?? 0;
+            const r = Math.sqrt((1 + deg * 2) / 6) * 6;
+            const fontSize = Math.max(8, 11 / globalScale);
+            ctx.font = `${fontSize}px system-ui, sans-serif`;
             ctx.textAlign = "center";
-            ctx.textBaseline = "bottom";
-            ctx.fillStyle = `rgba(161, 161, 170, ${opacity.toFixed(2)})`;
-            ctx.fillText(label, node.x ?? 0, (node.y ?? 0) + 2 / globalScale);
+            ctx.fillStyle = `rgba(212, 212, 216, ${Math.min(1, (globalScale - 0.2) / 0.5).toFixed(2)})`;
+            ctx.fillText(label, node.x ?? 0, (node.y ?? 0) - r - 4 / globalScale);
           }}
         />
       </div>

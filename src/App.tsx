@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ipcInvoke } from "@/ipc";
 import { reportAppError } from "@/hooks/useToastStore";
 import { appErrorMessage } from "@/errors";
@@ -71,9 +71,12 @@ function DevPanel() {
 }
 
 function Shell() {
+  const queryClient = useQueryClient();
   const { status } = useVaultStatus();
   const [selectedPath, setSelectedPath] = useState<string>("");
   const [rightTab, setRightTab] = useState<"tags" | "backlinks" | "graph">("graph");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   const createMutation = useCreateNoteMutation();
 
   if (status.kind !== "open") return <EmptyState />;
@@ -104,20 +107,51 @@ function Shell() {
   return (
     <div className="flex h-screen w-screen flex-col bg-zinc-950 text-zinc-100">
       <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-2">
+        <button
+          type="button"
+          data-testid="toggle-sidebar"
+          onClick={() => setSidebarOpen((v) => !v)}
+          className="rounded p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+          title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
         <span className="text-sm font-semibold tracking-tight">OBSIDIANA</span>
         <VaultSwitcher vault={status.vault} />
         <IndexStatusChip />
+        <button
+          type="button"
+          data-testid="rebuild-index"
+          onClick={() => {
+            ipcInvoke<void>("rebuild_index").then((r) => {
+              if (r.ok) {
+                queryClient.invalidateQueries({ queryKey: ["index"] });
+                queryClient.invalidateQueries({ queryKey: ["graph"] });
+              } else {
+                reportAppError(r.error);
+              }
+            });
+          }}
+          className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-500"
+          title="Rebuild index (re-scan all notes for connections, tags, etc.)"
+        >
+          Rebuild index
+        </button>
         {isDevMode() && <DevPanel />}
       </header>
       <main className="flex flex-1 overflow-hidden">
         <aside
           data-testid="sidebar"
-          className="w-72 shrink-0 border-r border-zinc-800"
+          className={`${sidebarOpen ? "w-72" : "w-0"} shrink-0 border-r border-zinc-800 overflow-hidden transition-[width] duration-200`}
         >
-          <FileTree
-            selectedPath={selectedPath || null}
-            onSelect={handleSelect}
-          />
+          {sidebarOpen && (
+            <FileTree
+              selectedPath={selectedPath || null}
+              onSelect={handleSelect}
+            />
+          )}
         </aside>
         <section className="flex flex-1 overflow-hidden min-w-0">
           {selectedPath ? (
@@ -140,50 +174,63 @@ function Shell() {
         {selectedPath ? (
           <aside
             data-testid="right-pane"
-            className="w-64 shrink-0 border-l border-zinc-800"
+            className={`${rightOpen ? "w-64" : "w-0"} shrink-0 border-l border-zinc-800 overflow-hidden transition-[width] duration-200`}
           >
-            <div role="tablist" className="flex border-b border-zinc-800 text-xs">
+            <div className="flex items-center border-b border-zinc-800 text-xs">
+              <div role="tablist" className="flex flex-1 min-w-0">
+                <button
+                  type="button"
+                  role="tab"
+                  data-testid="tab-tags"
+                  aria-selected={rightTab === "tags"}
+                  onClick={() => setRightTab("tags")}
+                  className={`flex-1 px-3 py-2 ${
+                    rightTab === "tags"
+                      ? "text-zinc-100 border-b-2 border-emerald-500"
+                      : "text-zinc-500"
+                  }`}
+                >
+                  Tags
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  data-testid="tab-backlinks"
+                  aria-selected={rightTab === "backlinks"}
+                  onClick={() => setRightTab("backlinks")}
+                  className={`flex-1 px-3 py-2 ${
+                    rightTab === "backlinks"
+                      ? "text-zinc-100 border-b-2 border-emerald-500"
+                      : "text-zinc-500"
+                  }`}
+                >
+                  Backlinks
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  data-testid="tab-graph"
+                  aria-selected={rightTab === "graph"}
+                  onClick={() => setRightTab("graph")}
+                  className={`flex-1 px-3 py-2 ${
+                    rightTab === "graph"
+                      ? "text-zinc-100 border-b-2 border-emerald-500"
+                      : "text-zinc-500"
+                  }`}
+                >
+                  Graph
+                </button>
+              </div>
               <button
                 type="button"
-                role="tab"
-                data-testid="tab-tags"
-                aria-selected={rightTab === "tags"}
-                onClick={() => setRightTab("tags")}
-                className={`flex-1 px-3 py-2 ${
-                  rightTab === "tags"
-                    ? "text-zinc-100 border-b-2 border-emerald-500"
-                    : "text-zinc-500"
-                }`}
+                data-testid="toggle-right-pane"
+                onClick={() => setRightOpen((v) => !v)}
+                className="shrink-0 px-2 py-2 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+                title={rightOpen ? "Collapse panel" : "Expand panel"}
               >
-                Tags
-              </button>
-              <button
-                type="button"
-                role="tab"
-                data-testid="tab-backlinks"
-                aria-selected={rightTab === "backlinks"}
-                onClick={() => setRightTab("backlinks")}
-                className={`flex-1 px-3 py-2 ${
-                  rightTab === "backlinks"
-                    ? "text-zinc-100 border-b-2 border-emerald-500"
-                    : "text-zinc-500"
-                }`}
-              >
-                Backlinks
-              </button>
-              <button
-                type="button"
-                role="tab"
-                data-testid="tab-graph"
-                aria-selected={rightTab === "graph"}
-                onClick={() => setRightTab("graph")}
-                className={`flex-1 px-3 py-2 ${
-                  rightTab === "graph"
-                    ? "text-zinc-100 border-b-2 border-emerald-500"
-                    : "text-zinc-500"
-                }`}
-              >
-                Graph
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
               </button>
             </div>
             {rightTab === "tags" ? (
