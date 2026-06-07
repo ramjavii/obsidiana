@@ -66,10 +66,11 @@ pub async fn graph_snapshot(state: tauri::State<'_, AppState>) -> AppResult<Grap
 
         let mut link_stmt = conn
             .prepare(
-                "SELECT src.file_path, COALESCE(tgt.file_path, c.target_path)
+                "SELECT src.file_path, COALESCE(tgt.file_path, tgt2.file_path, c.target_path)
                  FROM connections c
                  JOIN documents src ON src.id = c.source_id
-                 LEFT JOIN documents tgt ON tgt.file_path = c.target_path",
+                 LEFT JOIN documents tgt ON tgt.file_path = c.target_path
+                 LEFT JOIN documents tgt2 ON tgt2.file_path = c.target_path || '.md'",
             )
             .map_err(|e| AppError::internal(format!("prepare links: {e}")))?;
         let links: Vec<GraphLink> = link_stmt

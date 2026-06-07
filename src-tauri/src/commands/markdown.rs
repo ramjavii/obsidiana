@@ -141,22 +141,29 @@ pub fn get_backlinks_inner(
         .map_err(|e| AppError::internal(format!("open index db: {e}")))?;
 
     let relative_str = relative.to_string_lossy().to_string();
+    let bare_name = relative
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string());
 
     let mut stmt = conn.prepare(
         "SELECT d.file_path, d.title, c.kind, c.block_id
          FROM connections c
          JOIN documents d ON d.id = c.source_id
-         WHERE c.target_path = ?1",
+         WHERE c.target_path = ?1 OR (c.target_path = ?2 AND ?2 IS NOT NULL)",
     )?;
 
-    let rows = stmt.query_map(rusqlite::params![relative_str], |row| {
-        Ok(BacklinkRef {
-            source_path: row.get(0)?,
-            source_title: row.get(1)?,
-            kind: row.get(2)?,
-            block_id: row.get(3)?,
-        })
-    })?;
+    let rows = stmt.query_map(
+        rusqlite::params![relative_str, bare_name],
+        |row| {
+            Ok(BacklinkRef {
+                source_path: row.get(0)?,
+                source_title: row.get(1)?,
+                kind: row.get(2)?,
+                block_id: row.get(3)?,
+            })
+        },
+    )?;
 
     let mut results = Vec::new();
     for row in rows {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ipcInvoke } from "@/ipc";
 import { reportAppError } from "@/hooks/useToastStore";
@@ -70,13 +70,61 @@ function DevPanel() {
   );
 }
 
+function DragHandle({ onDrag }: { onDrag: (delta: number) => void }) {
+  const dragging = useRef(false);
+  const startX = useRef(0);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      const delta = e.clientX - startX.current;
+      startX.current = e.clientX;
+      onDrag(delta);
+    };
+    const onMouseUp = () => {
+      dragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [onDrag]);
+
+  return (
+    <div
+      onMouseDown={(e) => {
+        e.preventDefault();
+        dragging.current = true;
+        startX.current = e.clientX;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+      }}
+      className="w-1 cursor-col-resize shrink-0 bg-zinc-800 hover:bg-zinc-600 active:bg-zinc-500 transition-colors"
+    />
+  );
+}
+
 function Shell() {
   const { status } = useVaultStatus();
   const [selectedPath, setSelectedPath] = useState<string>("");
   const [rightTab, setRightTab] = useState<"tags" | "backlinks" | "graph">("graph");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(288);
+  const [rightWidth, setRightWidth] = useState(256);
   const createMutation = useCreateNoteMutation();
+
+  const onSidebarDrag = useCallback((delta: number) => {
+    setSidebarWidth((w) => Math.max(160, Math.min(600, w + delta)));
+  }, []);
+
+  const onRightDrag = useCallback((delta: number) => {
+    setRightWidth((w) => Math.max(160, Math.min(600, w - delta)));
+  }, []);
 
   if (status.kind !== "open") return <EmptyState />;
 
@@ -125,7 +173,8 @@ function Shell() {
       <main className="flex flex-1 overflow-hidden">
         <aside
           data-testid="sidebar"
-          className={`${sidebarOpen ? "w-72" : "w-0"} shrink-0 border-r border-zinc-800 overflow-hidden transition-[width] duration-200`}
+          className="shrink-0 border-r border-zinc-800 overflow-hidden transition-[width] duration-200"
+          style={{ width: sidebarOpen ? sidebarWidth : 0 }}
         >
           {sidebarOpen && (
             <FileTree
@@ -134,6 +183,9 @@ function Shell() {
             />
           )}
         </aside>
+        {sidebarOpen && (
+          <DragHandle onDrag={onSidebarDrag} />
+        )}
         <section className="flex flex-1 overflow-hidden min-w-0">
           {selectedPath ? (
             <div className="flex flex-1 min-w-0">
@@ -156,16 +208,20 @@ function Shell() {
               type="button"
               data-testid="toggle-right-pane"
               onClick={() => setRightOpen((v) => !v)}
-              className="shrink-0 border-l border-zinc-800 px-0.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+              className="shrink-0 border-l border-zinc-800 px-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 flex items-center"
               title={rightOpen ? "Collapse panel" : "Expand panel"}
             >
               <svg className={`h-3 w-3 transition-transform duration-200 ${rightOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </button>
+            {rightOpen && (
+              <DragHandle onDrag={onRightDrag} />
+            )}
           <aside
             data-testid="right-pane"
-            className={`${rightOpen ? "w-64" : "w-0"} shrink-0 border-l border-zinc-800 overflow-hidden transition-[width] duration-200`}
+            className="shrink-0 border-l border-zinc-800 overflow-hidden transition-[width] duration-200"
+            style={{ width: rightOpen ? rightWidth : 0 }}
           >
             <div role="tablist" className="flex border-b border-zinc-800 text-xs">
               <button
