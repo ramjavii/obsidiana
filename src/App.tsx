@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ipcInvoke } from "@/ipc";
 import { reportAppError } from "@/hooks/useToastStore";
 import { appErrorMessage } from "@/errors";
@@ -71,7 +71,6 @@ function DevPanel() {
 }
 
 function Shell() {
-  const queryClient = useQueryClient();
   const { status } = useVaultStatus();
   const [selectedPath, setSelectedPath] = useState<string>("");
   const [rightTab, setRightTab] = useState<"tags" | "backlinks" | "graph">("graph");
@@ -121,24 +120,6 @@ function Shell() {
         <span className="text-sm font-semibold tracking-tight">OBSIDIANA</span>
         <VaultSwitcher vault={status.vault} />
         <IndexStatusChip />
-        <button
-          type="button"
-          data-testid="rebuild-index"
-          onClick={() => {
-            ipcInvoke<void>("rebuild_index").then((r) => {
-              if (r.ok) {
-                queryClient.invalidateQueries({ queryKey: ["index"] });
-                queryClient.invalidateQueries({ queryKey: ["graph"] });
-              } else {
-                reportAppError(r.error);
-              }
-            });
-          }}
-          className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-500"
-          title="Rebuild index (re-scan all notes for connections, tags, etc.)"
-        >
-          Rebuild index
-        </button>
         {isDevMode() && <DevPanel />}
       </header>
       <main className="flex flex-1 overflow-hidden">
@@ -166,71 +147,68 @@ function Shell() {
           ) : (
             <div
               data-testid="empty-main"
-              className="flex h-full items-center justify-center text-zinc-500"
-            >
-              <p className="text-sm">Select a file from the tree.</p>
-            </div>
+              className="flex h-full items-center justify-center"
+            />
           )}
         {selectedPath ? (
+          <>
+            <button
+              type="button"
+              data-testid="toggle-right-pane"
+              onClick={() => setRightOpen((v) => !v)}
+              className="shrink-0 border-l border-zinc-800 px-0.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+              title={rightOpen ? "Collapse panel" : "Expand panel"}
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
           <aside
             data-testid="right-pane"
             className={`${rightOpen ? "w-64" : "w-0"} shrink-0 border-l border-zinc-800 overflow-hidden transition-[width] duration-200`}
           >
-            <div className="flex items-center border-b border-zinc-800 text-xs">
-              <div role="tablist" className="flex flex-1 min-w-0">
-                <button
-                  type="button"
-                  role="tab"
-                  data-testid="tab-tags"
-                  aria-selected={rightTab === "tags"}
-                  onClick={() => setRightTab("tags")}
-                  className={`flex-1 px-3 py-2 ${
-                    rightTab === "tags"
-                      ? "text-zinc-100 border-b-2 border-emerald-500"
-                      : "text-zinc-500"
-                  }`}
-                >
-                  Tags
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  data-testid="tab-backlinks"
-                  aria-selected={rightTab === "backlinks"}
-                  onClick={() => setRightTab("backlinks")}
-                  className={`flex-1 px-3 py-2 ${
-                    rightTab === "backlinks"
-                      ? "text-zinc-100 border-b-2 border-emerald-500"
-                      : "text-zinc-500"
-                  }`}
-                >
-                  Backlinks
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  data-testid="tab-graph"
-                  aria-selected={rightTab === "graph"}
-                  onClick={() => setRightTab("graph")}
-                  className={`flex-1 px-3 py-2 ${
-                    rightTab === "graph"
-                      ? "text-zinc-100 border-b-2 border-emerald-500"
-                      : "text-zinc-500"
-                  }`}
-                >
-                  Graph
-                </button>
-              </div>
+            <div role="tablist" className="flex border-b border-zinc-800 text-xs">
               <button
                 type="button"
-                data-testid="toggle-right-pane"
-                onClick={() => setRightOpen((v) => !v)}
-                className="shrink-0 px-2 py-2 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
-                title={rightOpen ? "Collapse panel" : "Expand panel"}
+                role="tab"
+                data-testid="tab-tags"
+                aria-selected={rightTab === "tags"}
+                onClick={() => setRightTab("tags")}
+                className={`flex-1 px-3 py-2 ${
+                  rightTab === "tags"
+                    ? "text-zinc-100 border-b-2 border-emerald-500"
+                    : "text-zinc-500"
+                }`}
               >
-                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
+                Tags
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-testid="tab-backlinks"
+                aria-selected={rightTab === "backlinks"}
+                onClick={() => setRightTab("backlinks")}
+                className={`flex-1 px-3 py-2 ${
+                  rightTab === "backlinks"
+                    ? "text-zinc-100 border-b-2 border-emerald-500"
+                    : "text-zinc-500"
+                }`}
+              >
+                Backlinks
+              </button>
+              <button
+                type="button"
+                role="tab"
+                data-testid="tab-graph"
+                aria-selected={rightTab === "graph"}
+                onClick={() => setRightTab("graph")}
+                className={`flex-1 px-3 py-2 ${
+                  rightTab === "graph"
+                    ? "text-zinc-100 border-b-2 border-emerald-500"
+                    : "text-zinc-500"
+                }`}
+              >
+                Graph
               </button>
             </div>
             {rightTab === "tags" ? (
@@ -244,6 +222,7 @@ function Shell() {
               />
             )}
           </aside>
+          </>
         ) : null}
         </section>
       </main>
