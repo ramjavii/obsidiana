@@ -6,93 +6,42 @@ import { appErrorMessage } from "@/errors";
 import type { AppError } from "@/errors";
 import type { GraphData, GraphLink, GraphNode } from "@/types/index";
 
-function getLinkEndpoints(
-  link: GraphLink,
-): [string, string] {
-  const srcId = link.source;
-  const tgtId = link.target;
-  return [srcId, tgtId];
-}
-
-function computeNhopNeighborhood(
-  nodes: GraphNode[],
-  links: GraphLink[],
-  activePath: string,
-  maxHops: number,
-  hideOrphans: boolean,
-): GraphData {
-  const linkMap = new Map<string, GraphLink[]>();
-  const orphanCandidate = new Set(nodes.map((n) => n.id));
-
-  for (const link of links) {
-    const [srcId, tgtId] = getLinkEndpoints(link);
-
-    if (!linkMap.has(srcId)) linkMap.set(srcId, []);
-    linkMap.get(srcId)!.push(link);
-    if (!linkMap.has(tgtId)) linkMap.set(tgtId, []);
-    linkMap.get(tgtId)!.push(link);
-
-    orphanCandidate.delete(srcId);
-    orphanCandidate.delete(tgtId);
-  }
-
-  const visited = new Set<string>([activePath]);
-  let frontier = [activePath];
-
-  if (maxHops > 0) {
-    for (let hop = 1; hop <= maxHops; hop++) {
-      const next: string[] = [];
-      for (const id of frontier) {
-        const adjacent = linkMap.get(id) ?? [];
-        for (const link of adjacent) {
-          const [srcId, tgtId] = getLinkEndpoints(link);
-          const neighbor = srcId === id ? tgtId : srcId;
-          if (!visited.has(neighbor)) {
-            visited.add(neighbor);
-            next.push(neighbor);
-          }
-        }
-      }
-      frontier = next;
-    }
-  } else {
-    for (const n of nodes) visited.add(n.id);
-  }
-
-  let filteredNodes: GraphNode[];
-
-  if (hideOrphans) {
-    filteredNodes = nodes.filter((n) => visited.has(n.id));
-    const connected = new Set<string>();
-    for (const link of links) {
-      const [srcId, tgtId] = getLinkEndpoints(link);
-      if (visited.has(srcId) && visited.has(tgtId)) {
-        connected.add(srcId);
-        connected.add(tgtId);
-      }
-    }
-    filteredNodes = filteredNodes.filter((n) => connected.has(n.id) || n.id === activePath);
-  } else {
-    filteredNodes = nodes.filter((n) => visited.has(n.id) || orphanCandidate.has(n.id));
-  }
-
-  const visitedSet = new Set(filteredNodes.map((n) => n.id));
-  const filteredLinks = links.filter((link) => {
-    const [srcId, tgtId] = getLinkEndpoints(link);
-    return visitedSet.has(srcId) && visitedSet.has(tgtId);
-  });
-
-  return { nodes: filteredNodes, links: filteredLinks };
-}
-
 function computeDegree(links: GraphLink[]): Map<string, number> {
   const degree = new Map<string, number>();
   for (const link of links) {
-    const [srcId, tgtId] = getLinkEndpoints(link);
+    const srcId = link.source;
+    const tgtId = link.target;
     degree.set(srcId, (degree.get(srcId) ?? 0) + 1);
     degree.set(tgtId, (degree.get(tgtId) ?? 0) + 1);
   }
   return degree;
+}
+
+function getLinkEndpoints(link: GraphLink): [string, string] {
+  return [link.source, link.target];
+}
+
+function computeHighlightSet(
+  links: GraphLink[],
+  activePath: string | undefined,
+): Set<string> | null {
+  if (!activePath) return null;
+  const connected = new Set<string>([activePath]);
+  for (const link of links) {
+    const [srcId, tgtId] = getLinkEndpoints(link);
+    if (srcId === activePath) connected.add(tgtId);
+    if (tgtId === activePath) connected.add(srcId);
+  }
+  return connected;
+}
+
+function isHighlightedLink(
+  link: GraphLink,
+  highlightSet: Set<string> | null,
+): boolean {
+  if (!highlightSet) return false;
+  const [srcId, tgtId] = getLinkEndpoints(link);
+  return highlightSet.has(srcId) && highlightSet.has(tgtId);
 }
 
 type Props = {
@@ -132,24 +81,10 @@ export function GraphView({ activePath, onNodeClick }: Props) {
     [query.data],
   );
 
-  const filtered = useMemo(() => {
-    const data = query.data;
-    if (!data || data.nodes.length === 0) return data;
-
-    if (!activePath) return data;
-
-    try {
-      return computeNhopNeighborhood(
-        data.nodes,
-        data.links,
-        activePath,
-        2,
-        true,
-      );
-    } catch {
-      return data;
-    }
-  }, [query.data, activePath]);
+  const highlightSet = useMemo(
+    () => (query.data ? computeHighlightSet(query.data.links, activePath) : null),
+    [query.data, activePath],
+  );
 
   if (query.isPending) {
     return (
@@ -188,20 +123,36 @@ export function GraphView({ activePath, onNodeClick }: Props) {
     <div className="flex h-full flex-col">
       <div ref={measuredRef} className="flex-1 min-h-0">
         <ForceGraph2D
-          graphData={filtered ?? { nodes: [], links: [] }}
+          graphData={query.data}
           nodeLabel="title"
           nodeRelSize={6}
           nodeVal={(node) => {
             const deg = degreeMap.get((node as GraphNode).id) ?? 0;
             return 1 + deg * 2;
           }}
-          nodeColor={(node) => (node as GraphNode).id === activePath ? "#10b981" : "#52525b"}
-          linkColor={() => "#3f3f46"}
-          linkWidth={0.5}
+          nodeColor={(node) => {
+            const id = (node as GraphNode).id;
+            if (id === activePath) return "#10b981";
+            if (highlightSet?.has(id)) return "#a1a1aa";
+            return "#52525b";
+          }}
+          linkColor={(link) =>
+            isHighlightedLink(link as GraphLink, highlightSet)
+              ? "#a1a1aa"
+              : "#3f3f46"
+          }
+          linkWidth={(link) =>
+            isHighlightedLink(link as GraphLink, highlightSet) ? 2 : 0.3
+          }
           backgroundColor="#09090b"
           width={graphSize.width}
           height={graphSize.height}
           onNodeClick={(node) => onNodeClick?.((node as { id: string }).id)}
+          d3AlphaDecay={0.08}
+          d3VelocityDecay={0.6}
+          warmupTicks={200}
+          cooldownTicks={500}
+          cooldownTime={5000}
           nodeCanvasObjectMode={() => "after"}
           nodeCanvasObject={(node, ctx, globalScale) => {
             const n = node as GraphNode;

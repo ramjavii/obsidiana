@@ -5,6 +5,7 @@
 
 ## Change Log
 
+- 2026-06-07 — Graph switched to single-main-graph mode: all nodes always visible, N-hop filter removed. Active note connections highlighted with thicker bright links and emerald glow. Physics tuned for snappier drag (higher alpha/velocity decay, warmup ticks). (`src/components/GraphView.tsx`)
 - 2026-06-07 — Fixed bare-name wikilink resolution in graph and backlinks SQL queries. `graph_snapshot` now includes a second LEFT JOIN on `target_path || '.md'` so bare-name `[[note]]` correctly resolves to `note.md` documents. `get_backlinks` matches both `target_path = ?1` and `target_path = ?2` (stem without extension). Also added draggable panel borders: DragHandle component between sidebar/editor and editor/right-pane. (`src-tauri/src/commands/graph.rs`, `src-tauri/src/commands/markdown.rs`, `src/App.tsx`)
 - 2026-06-07 — §4.2 N-hop local graph filter and §4.3 zoom-fading labels shipped. GraphView now filters by N-hop neighborhood from the active note (client-side BFS), with hoverable orphan toggle and hops selector. Node labels fade with zoom via custom nodeCanvasObject. (`src/components/GraphView.tsx`)
 - 2026-06-07 — §4.1 Force-directed graph view shipped. New `graph_snapshot` IPC command queries the index DB for all resolved documents and connections; frontend renders via `react-force-graph-2d` inside a new "Graph" tab in the right pane. (`src-tauri/src/commands/graph.rs`, `src/components/GraphView.tsx`, `src/App.tsx`)

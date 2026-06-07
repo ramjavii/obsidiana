@@ -19,6 +19,7 @@ vi.mock("react-force-graph-2d", () => ({
       <div
         data-testid="graph-canvas"
         data-nodes={JSON.stringify(graphData.nodes)}
+        data-links={JSON.stringify(graphData.links)}
         data-has-nodecanvas={String(!!nodeCanvasObject)}
       />
     );
@@ -99,71 +100,28 @@ describe("GraphView", () => {
     );
   });
 
-  describe("N-hop filter", () => {
-    const linkedData: GraphData = {
+  it("shows all nodes regardless of activePath (single main graph)", async () => {
+    const data: GraphData = {
       nodes: [
         { id: "a.md", title: "A" },
         { id: "b.md", title: "B" },
         { id: "c.md", title: "C" },
-        { id: "d.md", title: "D" },
       ],
       links: [
         { source: "a.md", target: "b.md" },
         { source: "b.md", target: "c.md" },
-        { source: "c.md", target: "d.md" },
       ],
     };
+    invokeMock.mockResolvedValueOnce(data);
 
-    it("shows all nodes when no activePath is provided (no filtering)", async () => {
-      invokeMock.mockResolvedValueOnce(linkedData);
+    render(<GraphView activePath="a.md" />, { wrapper: wrapperFactory() });
 
-      render(<GraphView />, { wrapper: wrapperFactory() });
-
-      await waitFor(() => {
-        const canvas = screen.getByTestId("graph-canvas");
-        const nodes: { id: string }[] = JSON.parse(
-          canvas.getAttribute("data-nodes") ?? "[]",
-        );
-        expect(nodes).toHaveLength(4);
-      });
-    });
-
-    it("filters to 2-hop neighborhood by default given activePath", async () => {
-      invokeMock.mockResolvedValueOnce(linkedData);
-
-      render(<GraphView activePath="a.md" />, { wrapper: wrapperFactory() });
-
-      await waitFor(() => {
-        const canvas = screen.getByTestId("graph-canvas");
-        const nodes: { id: string }[] = JSON.parse(
-          canvas.getAttribute("data-nodes") ?? "[]",
-        );
-        expect(nodes).toHaveLength(3);
-        expect(nodes.map((n) => n.id)).toEqual(["a.md", "b.md", "c.md"]);
-      });
-    });
-
-    it("hides orphan nodes (no connections) by default", async () => {
-      const dataWithOrphan: GraphData = {
-        nodes: [
-          { id: "a.md", title: "A" },
-          { id: "b.md", title: "B" },
-          { id: "orphan.md", title: "Orphan" },
-        ],
-        links: [{ source: "a.md", target: "b.md" }],
-      };
-      invokeMock.mockResolvedValueOnce(dataWithOrphan);
-
-      render(<GraphView activePath="a.md" />, { wrapper: wrapperFactory() });
-
-      await waitFor(() => {
-        const canvas = screen.getByTestId("graph-canvas");
-        const nodes: { id: string }[] = JSON.parse(
-          canvas.getAttribute("data-nodes") ?? "[]",
-        );
-        const ids = nodes.map((n) => n.id);
-        expect(ids).not.toContain("orphan.md");
-      });
+    await waitFor(() => {
+      const canvas = screen.getByTestId("graph-canvas");
+      const nodes: { id: string }[] = JSON.parse(
+        canvas.getAttribute("data-nodes") ?? "[]",
+      );
+      expect(nodes).toHaveLength(3);
     });
   });
 

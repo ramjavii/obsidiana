@@ -2398,6 +2398,30 @@ src-tauri/src/
 │   └── markdown.rs        (OR c.target_path = bare_name in backlinks)
 ```
 
+## Single-main-graph + highlight + physics tuning
+
+**What it does:** The graph is now a single view showing ALL nodes and
+links at all times. When a note is selected, its direct neighbours
+"glow" (emerald node, thick bright links) while everything else stays
+grey. The N-hop filter and orphan toggle were removed.
+
+**Physics tuning** for snappier drag interaction:
+
+| Prop | Value |
+|------|-------|
+| `d3AlphaDecay` | 0.08 (was default 0.02) |
+| `d3VelocityDecay` | 0.6 (was default 0.4) |
+| `warmupTicks` | 200 (was 0) |
+| `cooldownTicks` | 500 (was ∞) |
+| `cooldownTime` | 5000 ms (was 15000) |
+
+**Touched files:**
+```
+src/
+├── components/GraphView.tsx  (removed N-hop, added highlight + perf props)
+└── __tests__/GraphView.test.tsx (removed N-hop tests, added single-graph test)
+```
+
 ## Open Questions / Backlog
 
 - ~~Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a
