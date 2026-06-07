@@ -6,6 +6,7 @@ import {
   waitFor,
   act,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import {
@@ -677,6 +678,94 @@ describe("Editor — wikilink click-to-jump (2.4)", () => {
     });
     await waitFor(() => {
       expect(screen.getByTestId("fs-change-reload-needed")).toBeInTheDocument();
+    });
+  });
+
+  it("clicking Reload on the fs-change banner discards edits and re-reads the file", async () => {
+    let readCallCount = 0;
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        readCallCount += 1;
+        return Promise.resolve({
+          path: "hello.md",
+          content: readCallCount === 1 ? "# hi" : "# reloaded",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<Editor path="hello.md" onClose={() => undefined} />, {
+      wrapper: wrapperFactory(),
+    });
+    await screen.findByTestId("editor");
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saved");
+    });
+    expect(readCallCount).toBe(1);
+    setCmSharedDoc("dirty edit");
+    act(() => {
+      fireCmUpdate(true, "dirty edit");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saving");
+    });
+    act(() => {
+      triggerWatcherChange({ kind: "changed", path: "hello.md" });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("fs-change-reload-needed")).toBeInTheDocument();
+    });
+    const reloadedCountBefore = readCallCount;
+    await userEvent.click(screen.getByTestId("fs-change-reload"));
+    await waitFor(() => {
+      expect(readCallCount).toBeGreaterThan(reloadedCountBefore);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("fs-change-reload-needed")).not.toBeInTheDocument();
+    });
+  });
+
+  it("clicking Discard on the fs-change banner discards edits and re-reads the file", async () => {
+    let readCallCount = 0;
+    invokeMock.mockImplementation((cmd: unknown) => {
+      if (cmd === "read_note") {
+        readCallCount += 1;
+        return Promise.resolve({
+          path: "hello.md",
+          content: readCallCount === 1 ? "# hi" : "# discarded",
+          modifiedAt: "2026-06-03T00:00:00Z",
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<Editor path="hello.md" onClose={() => undefined} />, {
+      wrapper: wrapperFactory(),
+    });
+    await screen.findByTestId("editor");
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saved");
+    });
+    expect(readCallCount).toBe(1);
+    setCmSharedDoc("dirty edit");
+    act(() => {
+      fireCmUpdate(true, "dirty edit");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-status")).toHaveTextContent("Saving");
+    });
+    act(() => {
+      triggerWatcherChange({ kind: "changed", path: "hello.md" });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("fs-change-reload-needed")).toBeInTheDocument();
+    });
+    const discardedCountBefore = readCallCount;
+    await userEvent.click(screen.getByTestId("fs-change-discard"));
+    await waitFor(() => {
+      expect(readCallCount).toBeGreaterThan(discardedCountBefore);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("fs-change-reload-needed")).not.toBeInTheDocument();
     });
   });
 });

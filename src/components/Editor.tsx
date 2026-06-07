@@ -335,6 +335,16 @@ export function Editor({
     };
   }, []);
 
+  const handleReload = useCallback(() => {
+    setNeedsReload(false);
+    void queryClient.invalidateQueries({ queryKey: noteKey(pathRef.current) });
+  }, [queryClient]);
+
+  const handleDiscard = useCallback(() => {
+    setNeedsReload(false);
+    void queryClient.invalidateQueries({ queryKey: noteKey(pathRef.current) });
+  }, [queryClient]);
+
   const handleClose = useCallback(() => {
     void flushSave().finally(() => onCloseRef.current());
   }, [flushSave]);
@@ -379,9 +389,27 @@ export function Editor({
       {needsReload ? (
         <div
           data-testid="fs-change-reload-needed"
-          className="border-b border-amber-700 bg-amber-950/60 px-4 py-1 text-xs text-amber-200"
+          className="flex items-center justify-between border-b border-amber-700 bg-amber-950/60 px-4 py-1 text-xs text-amber-200"
         >
-          File changed on disk. Save or discard your edits, then reload.
+          <span>File changed on disk.</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              data-testid="fs-change-reload"
+              onClick={handleReload}
+              className="rounded border border-amber-600 px-2 py-0.5 text-amber-100 hover:bg-amber-800"
+            >
+              Reload
+            </button>
+            <button
+              type="button"
+              data-testid="fs-change-discard"
+              onClick={handleDiscard}
+              className="rounded border border-zinc-600 px-2 py-0.5 text-zinc-300 hover:bg-zinc-700"
+            >
+              Discard
+            </button>
+          </div>
         </div>
       ) : null}
       {mode === "reading" ? (
