@@ -60,8 +60,8 @@ Indexing & graph:
   - [x] 3.2.1: visible Reload/Discard banner on dirty-buffer external changes
   - [x] 3.3: real-time link refactor on file rename/move
 - [x] 4.1: Force-directed graph view (repulsion + link tension + gravity); `graph_snapshot` IPC; "Graph" tab in right pane
-- [ ] 4.2: Local graph filter (N-hop neighborhood of the active note)
-- [ ] 4.3: Label opacity fading on zoom
+- [x] 4.2: Local graph filter (N-hop neighborhood of the active note); orphan toggle in filter controls
+- [x] 4.3: Label opacity fading on zoom (nodeCanvasObject with zoom-dependent alpha)
 
 Sync & publishing:
 
@@ -89,12 +89,12 @@ Explicitly out of MVP (deferred to a later stage):
 
 ## Current Stage
 
-`Current Stage: 4 — Graph view`
+`Current Stage: 5 — Git sync + Quartz publishing`
 
-4.1 — Force-directed graph view — is shipped. 4.2 (local graph filter)
-and 4.3 (label opacity fading on zoom) are the remaining sub-features
-in this stage. The graph renders via `react-force-graph-2d` inside a
-"Graph" tab in the right pane alongside Tags and Backlinks.
+Stage 4 (Graph view) is fully shipped (4.1 force-directed graph,
+4.2 N-hop local filter + orphan toggle, 4.3 zoom-fading labels).
+All three graph sub-features are delivered. The next stage is Git
+sync UI and Quartz publishing pipeline.
 
 ## Notes & Decisions
 

@@ -2306,6 +2306,60 @@ src/
 | Include broken links? | No. | Only `resolved_target_id IS NOT NULL`. |
 | Where does the Graph tab go? | Right pane, after Backlinks. | Matches spec §5 UI hierarchy (`<RightPane>` tabs: Backlinks \| Graph \| Git). |
 
+## N-hop graph filter (micro-feature 4.2)
+
+**What it does:** When a note is selected in the editor, the graph
+can be filtered to show only nodes reachable from that note within
+N hops (default 2). Orphan notes (no connections at all) are hidden
+by default with a toggle.
+
+**Implementation:**
+
+- `GraphView` now accepts an `activePath?: string` prop passed from
+  `App.tsx` (`selectedPath`).
+- The `computeNhopNeighborhood` function runs a client-side BFS over
+  the full graph data:
+  1. Builds an adjacency map from the link list.
+  2. BFS from `activePath` for `maxHops` iterations.
+  3. If `hideOrphans=true`: further filters to nodes that have at
+     least one connection within the visited set (keeps `activePath`).
+  4. If `hideOrphans=false`: includes both visited nodes and any
+     orphan (unconnected) node from the full dataset.
+- Filter controls rendered above the canvas:
+  - Hops `<select>`: 1 / 2 / 3 / ∞ (0 = unlimited).
+  - "Hide orphans" checkbox.
+- When no `activePath` is set, a prompt reads "Select a note from
+  the tree to filter the graph."
+
+**Touched files:**
+```
+src/
+├── types/index.ts          (GraphFilter type added)
+├── components/GraphView.tsx (activePath prop, N-hop BFS, controls)
+├── App.tsx                 (pass selectedPath to GraphView)
+└── __tests__/GraphView.test.tsx (8 new filter tests)
+```
+
+## Zoom-fading labels (micro-feature 4.3)
+
+**What it does:** Node labels fade to near-invisible as the user
+zooms out. At 1× zoom labels are fully opaque; at 0.3× they are
+nearly transparent. Implemented via custom `nodeCanvasObject`.
+
+**Implementation:**
+
+`GraphView.tsx` passes two new props to `ForceGraph2D`:
+
+- `nodeCanvasObjectMode={() => "after"}` — paints labels after the
+  default node circle.
+- `nodeCanvasObject={(node, ctx, globalScale) => ...}` — draws the
+  node title with:
+  - `fontSize = 10 / globalScale` (scales down with zoom)
+  - `opacity = clamp((globalScale - 0.3) / 0.7, 0, 1)`
+  - `fillStyle = rgba(161, 161, 170, opacity)` (zinc-400 color)
+
+No new files; only `GraphView.tsx` modified.
+
 ## Open Questions / Backlog
 
 - ~~Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a
