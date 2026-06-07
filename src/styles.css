@@ -2,27 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-.cm-wikilink {
-  color: rgb(167, 139, 250);
-  text-decoration: underline;
-  text-decoration-color: rgba(167, 139, 250, 0.4);
-  text-underline-offset: 2px;
-}
-
-.cm-wikilink-resolved {
-  color: rgb(134, 239, 172);
-  cursor: pointer;
-}
-
-.cm-wikilink-broken {
-  color: rgb(252, 165, 165);
-  cursor: pointer;
-  text-decoration-style: wavy;
-  text-decoration-color: rgba(252, 165, 165, 0.6);
-}
-
 .cm-md-strong {
   font-weight: 700;
+  color: rgb(244, 244, 245);
 }
 
 .cm-md-em {
@@ -31,19 +13,27 @@
 
 .cm-md-strikethrough {
   text-decoration: line-through;
+  color: rgb(161, 161, 170);
 }
 
 .cm-md-heading {
   font-weight: 700;
-  color: rgb(228, 228, 231);
+  color: rgb(244, 244, 245);
+  line-height: 1.25;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
 }
 
 .cm-md-heading-1 {
   font-size: 1.875rem;
+  border-bottom: 1px solid rgb(63, 63, 70);
+  padding-bottom: 0.3em;
 }
 
 .cm-md-heading-2 {
   font-size: 1.5rem;
+  border-bottom: 1px solid rgb(63, 63, 70);
+  padding-bottom: 0.25em;
 }
 
 .cm-md-heading-3 {
@@ -92,6 +82,29 @@
   color: rgb(134, 239, 172);
   text-decoration: underline;
   text-decoration-color: rgba(134, 239, 172, 0.4);
+  text-underline-offset: 2px;
+}
+
+.cm-wikilink {
+  cursor: pointer;
+}
+
+.cm-wikilink-resolved {
+  color: rgb(134, 239, 172) !important;
+  cursor: pointer;
+}
+
+.cm-wikilink-broken {
+  color: rgb(252, 165, 165) !important;
+  cursor: pointer;
+  text-decoration-style: wavy;
+  text-decoration-color: rgba(252, 165, 165, 0.6);
+}
+
+.cm-wikilink-unresolved {
+  color: rgb(167, 139, 250) !important;
+  text-decoration: underline;
+  text-decoration-color: rgba(167, 139, 250, 0.4);
   text-underline-offset: 2px;
 }
 

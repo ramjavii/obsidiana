@@ -8,12 +8,9 @@ import {
 import {
   EditorView,
   keymap,
-  lineNumbers,
-  highlightActiveLine,
 } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
-import { oneDark } from "@codemirror/theme-one-dark";
 import {
   WIKILINK_CLICK_HANDLER,
   wikilinkHighlight,
@@ -255,12 +252,29 @@ export function Editor({
       if (compartment === null || renderComp === null) return;
 
       const extensions: Extension[] = [
-        lineNumbers(),
         history(),
-        highlightActiveLine(),
         EditorView.lineWrapping,
         markdown(),
-        oneDark,
+        EditorView.theme({
+          "&": { backgroundColor: "transparent", fontSize: "15px" },
+          ".cm-content": {
+            fontFamily: `system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`,
+            fontSize: "15px",
+            lineHeight: "1.65",
+            padding: "1.5rem 2rem",
+            maxWidth: "720px",
+            margin: "0 auto",
+            color: "#e4e4e7",
+            caretColor: "#a1a1aa",
+          },
+          ".cm-line": { padding: "0" },
+          "&.cm-focused .cm-cursor": { borderLeftColor: "#a1a1aa" },
+          "&.cm-focused": { outline: "none" },
+          ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+            backgroundColor: "rgba(255,255,255,0.08) !important",
+          },
+          ".cm-activeLine": { backgroundColor: "transparent" },
+        }),
         compartment.of(
           wikilinkHighlight((target, alias) => readMap(mapRef.current, target, alias)),
         ),

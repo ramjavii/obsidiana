@@ -128,6 +128,9 @@ vi.mock("@codemirror/view", () => {
     static domEventHandlers(handlers: Record<string, unknown>) {
       return { __isDomEventHandlers: true, handlers };
     }
+    static theme(_spec: Record<string, unknown>) {
+      return { __isEditorTheme: true, spec: _spec };
+    }
   }
 
   class Decoration {
