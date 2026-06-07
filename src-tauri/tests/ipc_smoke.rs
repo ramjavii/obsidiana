@@ -20,7 +20,7 @@ fn ping_command_returns_pong_when_invoked_directly() {
 fn ping_or_fail_command_returns_not_found_when_invoked_directly() {
     let result = tauri::async_runtime::block_on(error_demo::ping_or_fail());
     assert!(result.is_err());
-    let err = result.err().expect("err");
+    let err = result.expect_err("err");
     assert!(
         matches!(err, AppError::NotFound { ref what } if what.contains("ping_or_fail")),
         "expected NotFound, got {err:?}"
@@ -30,7 +30,7 @@ fn ping_or_fail_command_returns_not_found_when_invoked_directly() {
 #[test]
 fn ping_or_fail_serializes_to_frontend_shape() {
     let result = tauri::async_runtime::block_on(error_demo::ping_or_fail());
-    let err = result.err().expect("err");
+    let err = result.expect_err("err");
     let value = serde_json::to_value(&err).expect("serialize");
     assert_eq!(value["kind"], "NotFound");
     assert!(value["data"]["what"]

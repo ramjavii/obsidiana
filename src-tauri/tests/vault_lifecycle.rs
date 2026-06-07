@@ -261,7 +261,7 @@ fn list_recent_vaults_marks_missing_entries_unavailable() {
     let real_canonical = std::fs::canonicalize(&existing).unwrap();
     let real = recents
         .iter()
-        .find(|r| PathBuf::from(&r.path) == real_canonical)
+        .find(|r| r.path == real_canonical)
         .expect("real present");
     assert!(real.available);
     let gone = recents
