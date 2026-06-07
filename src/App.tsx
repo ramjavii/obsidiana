@@ -119,14 +119,16 @@ function Shell() {
             onSelect={handleSelect}
           />
         </aside>
-        <section className="flex flex-1 overflow-hidden">
+        <section className="flex flex-1 overflow-hidden min-w-0">
           {selectedPath ? (
+            <div className="flex flex-1 min-w-0">
             <Editor
               path={selectedPath}
               onClose={() => setSelectedPath("")}
               onJump={handleJump}
               onBrokenClick={handleBrokenClick}
             />
+            </div>
           ) : (
             <div
               data-testid="empty-main"

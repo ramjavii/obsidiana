@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ForceGraph2D from "react-force-graph-2d";
 import { getGraphSnapshot } from "@/ipc/graph";
@@ -93,6 +93,26 @@ type Props = {
 export function GraphView({ activePath, onNodeClick }: Props) {
   const [maxHops, setMaxHops] = useState(2);
   const [hideOrphans, setHideOrphans] = useState(true);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [graphSize, setGraphSize] = useState({ width: 256, height: 400 });
+  const measuredRef = useCallback((el: HTMLDivElement | null) => {
+    containerRef.current = el;
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setGraphSize({ width: rect.width, height: rect.height });
+      }
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const query = useQuery<GraphData, AppError>({
     queryKey: ["graph"],
@@ -188,15 +208,15 @@ export function GraphView({ activePath, onNodeClick }: Props) {
           Select a note from the tree to filter the graph.
         </div>
       )}
-      <div className="flex-1">
+      <div ref={measuredRef} className="flex-1 min-h-0">
         <ForceGraph2D
           graphData={filtered ?? { nodes: [], links: [] }}
           nodeLabel="title"
           nodeColor={() => "#10b981"}
           linkColor={() => "#52525b"}
           backgroundColor="#09090b"
-          width={256}
-          height={400}
+          width={graphSize.width}
+          height={graphSize.height}
           onNodeClick={(node) => onNodeClick?.((node as { id: string }).id)}
           nodeCanvasObjectMode={() => "after"}
           nodeCanvasObject={(node, ctx, globalScale) => {
