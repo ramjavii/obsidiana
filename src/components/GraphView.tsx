@@ -121,7 +121,13 @@ export function GraphView({ activePath, onNodeClick }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div ref={measuredRef} className="flex-1 min-h-0">
+      <div
+        ref={measuredRef}
+        className="flex-1 min-h-0"
+        style={{
+          background: "radial-gradient(ellipse at center, #09090b 0%, #000000 100%)",
+        }}
+      >
         <ForceGraph2D
           graphData={query.data}
           nodeLabel="title"
@@ -133,7 +139,7 @@ export function GraphView({ activePath, onNodeClick }: Props) {
           nodeColor={(node) => {
             const id = (node as GraphNode).id;
             if (id === activePath) return "#10b981";
-            if (highlightSet?.has(id)) return "#a1a1aa";
+            if (highlightSet?.has(id)) return "#fbbf24";
             return "#52525b";
           }}
           linkColor={(link) =>
@@ -144,6 +150,15 @@ export function GraphView({ activePath, onNodeClick }: Props) {
           linkWidth={(link) =>
             isHighlightedLink(link as GraphLink, highlightSet) ? 2 : 0.3
           }
+          linkCurvature={0.25}
+          linkDirectionalParticles={2}
+          linkDirectionalParticleSpeed={0.005}
+          linkDirectionalParticleWidth={1}
+          linkDirectionalParticleColor={(link) =>
+            isHighlightedLink(link as GraphLink, highlightSet)
+              ? "#a1a1aa"
+              : "#3f3f46"
+          }
           backgroundColor="#09090b"
           width={graphSize.width}
           height={graphSize.height}
@@ -153,17 +168,55 @@ export function GraphView({ activePath, onNodeClick }: Props) {
           warmupTicks={200}
           cooldownTicks={500}
           cooldownTime={5000}
-          nodeCanvasObjectMode={() => "after"}
+          nodeCanvasObjectMode={() => "replace"}
           nodeCanvasObject={(node, ctx, globalScale) => {
             const n = node as GraphNode;
             const label = n.title ?? n.id ?? "";
             const deg = degreeMap.get(n.id) ?? 0;
             const r = Math.sqrt((1 + deg * 2) / 6) * 6;
+            const x = node.x ?? 0;
+            const y = node.y ?? 0;
+
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.fillStyle = n.id === activePath ? "#10b981" : highlightSet?.has(n.id) ? "#fbbf24" : "#52525b";
+            ctx.fill();
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+            ctx.lineWidth = 1 / globalScale;
+            ctx.stroke();
+
+            if (n.id === activePath) {
+              ctx.beginPath();
+              ctx.arc(x, y, r + 6 / globalScale, 0, 2 * Math.PI);
+              ctx.strokeStyle = "rgba(16, 185, 129, 0.35)";
+              ctx.lineWidth = 2 / globalScale;
+              ctx.stroke();
+            }
+
             const fontSize = Math.max(8, 11 / globalScale);
             ctx.font = `${fontSize}px system-ui, sans-serif`;
             ctx.textAlign = "center";
-            ctx.fillStyle = `rgba(212, 212, 216, ${Math.min(1, (globalScale - 0.2) / 0.5).toFixed(2)})`;
-            ctx.fillText(label, node.x ?? 0, (node.y ?? 0) + r + 4 / globalScale);
+            ctx.textBaseline = "top";
+
+            const labelY = y + r + 4 / globalScale;
+            const metrics = ctx.measureText(label);
+            const pad = 3 / globalScale;
+            const bw = metrics.width + pad * 2;
+            const bh = fontSize + pad * 2;
+
+            ctx.fillStyle = "rgba(9, 9, 11, 0.75)";
+            ctx.roundRect
+              ? (() => {
+                  const rad = 3 / globalScale;
+                  ctx.beginPath();
+                  ctx.roundRect(x - bw / 2, labelY - pad, bw, bh, rad);
+                  ctx.fill();
+                })()
+              : ctx.fillRect(x - bw / 2, labelY - pad, bw, bh);
+
+            ctx.fillStyle = "rgba(212, 212, 216, 0.95)";
+            ctx.textBaseline = "top";
+            ctx.fillText(label, x, labelY);
           }}
         />
       </div>
