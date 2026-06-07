@@ -6,17 +6,6 @@ import { appErrorMessage } from "@/errors";
 import type { AppError } from "@/errors";
 import type { GraphData, GraphLink, GraphNode } from "@/types/index";
 
-function computeDegree(links: GraphLink[]): Map<string, number> {
-  const degree = new Map<string, number>();
-  for (const link of links) {
-    const srcId = link.source;
-    const tgtId = link.target;
-    degree.set(srcId, (degree.get(srcId) ?? 0) + 1);
-    degree.set(tgtId, (degree.get(tgtId) ?? 0) + 1);
-  }
-  return degree;
-}
-
 function getLinkEndpoints(link: GraphLink): [string, string] {
   return [link.source, link.target];
 }
@@ -76,11 +65,6 @@ export function GraphView({ activePath, onNodeClick }: Props) {
     queryFn: getGraphSnapshot,
   });
 
-  const degreeMap = useMemo(
-    () => (query.data ? computeDegree(query.data.links) : new Map<string, number>()),
-    [query.data],
-  );
-
   const highlightSet = useMemo(
     () => (query.data ? computeHighlightSet(query.data.links, activePath) : null),
     [query.data, activePath],
@@ -132,10 +116,9 @@ export function GraphView({ activePath, onNodeClick }: Props) {
           graphData={query.data}
           nodeLabel="title"
           nodeRelSize={6}
-          nodeVal={(node) => {
-            const deg = degreeMap.get((node as GraphNode).id) ?? 0;
-            return 1 + deg * 2;
-          }}
+          nodeVal={(node) =>
+            (node as GraphNode).id === activePath ? 6 : 1.5
+          }
           nodeColor={(node) => {
             const id = (node as GraphNode).id;
             if (id === activePath) return "#10b981";
@@ -148,7 +131,7 @@ export function GraphView({ activePath, onNodeClick }: Props) {
               : "#3f3f46"
           }
           linkWidth={(link) =>
-            isHighlightedLink(link as GraphLink, highlightSet) ? 2 : 0.3
+            isHighlightedLink(link as GraphLink, highlightSet) ? 3 : 1.2
           }
           linkCurvature={0.25}
           linkDirectionalParticles={2}
@@ -172,8 +155,9 @@ export function GraphView({ activePath, onNodeClick }: Props) {
           nodeCanvasObject={(node, ctx, globalScale) => {
             const n = node as GraphNode;
             const label = n.title ?? n.id ?? "";
-            const deg = degreeMap.get(n.id) ?? 0;
-            const r = Math.sqrt((1 + deg * 2) / 6) * 6;
+            const r = n.id === activePath
+              ? Math.sqrt(6 / 6) * 6
+              : Math.sqrt(1.5 / 6) * 6;
             const x = node.x ?? 0;
             const y = node.y ?? 0;
 
