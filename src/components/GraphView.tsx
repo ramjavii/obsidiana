@@ -131,7 +131,7 @@ export function GraphView({ activePath, onNodeClick }: Props) {
               : "#3f3f46"
           }
           linkWidth={(link) =>
-            isHighlightedLink(link as GraphLink, highlightSet) ? 3 : 1.2
+            isHighlightedLink(link as GraphLink, highlightSet) ? 5 : 2
           }
           linkCurvature={0.25}
           linkDirectionalParticles={2}
@@ -174,6 +174,12 @@ export function GraphView({ activePath, onNodeClick }: Props) {
               ctx.arc(x, y, r + 6 / globalScale, 0, 2 * Math.PI);
               ctx.strokeStyle = "rgba(16, 185, 129, 0.35)";
               ctx.lineWidth = 2 / globalScale;
+              ctx.stroke();
+            } else if (highlightSet?.has(n.id)) {
+              ctx.beginPath();
+              ctx.arc(x, y, r + 4 / globalScale, 0, 2 * Math.PI);
+              ctx.strokeStyle = "rgba(251, 191, 36, 0.3)";
+              ctx.lineWidth = 1.5 / globalScale;
               ctx.stroke();
             }
 
