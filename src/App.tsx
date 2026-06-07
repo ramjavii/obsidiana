@@ -73,7 +73,7 @@ function DevPanel() {
 function Shell() {
   const { status } = useVaultStatus();
   const [selectedPath, setSelectedPath] = useState<string>("");
-  const [rightTab, setRightTab] = useState<"tags" | "backlinks" | "graph">("tags");
+  const [rightTab, setRightTab] = useState<"tags" | "backlinks" | "graph">("graph");
   const createMutation = useCreateNoteMutation();
 
   if (status.kind !== "open") return <EmptyState />;
