@@ -121,6 +121,7 @@ pub fn delete_note_in(
 pub fn rename_note_in(
     vault_root: &Path,
     ignore: &crate::index::ignore_set::IgnoreSet,
+    index_db_path: &std::sync::Arc<std::sync::Mutex<Option<std::path::PathBuf>>>,
     from: &Path,
     to: &Path,
 ) -> AppResult<RenameReport> {
@@ -156,6 +157,19 @@ pub fn rename_note_in(
     ignore.record(&abs_to);
     std::fs::rename(&abs_from, &abs_to)
         .map_err(|e| AppError::from_io(abs_from.display().to_string(), &e))?;
+
+    // Update the index to reflect the rename
+    if let Ok(Some(db_path)) = index_db_path.lock().map(|g| g.clone()) {
+        if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+            let _ = conn.pragma_update(None, "foreign_keys", "ON");
+            let from_rel = from.to_string_lossy().into_owned();
+            let to_rel = to.to_string_lossy().into_owned();
+            if let Err(e) = crate::index::ingest_incremental::apply_rename(&conn, &from_rel, &to_rel) {
+                log::warn!("index rename update failed for {} -> {}: {}", from_rel, to_rel, e);
+            }
+        }
+    }
+
     Ok(RenameReport {
         from: from.to_string_lossy().into_owned(),
         to: to.to_string_lossy().into_owned(),
@@ -242,6 +256,7 @@ mod tests {
     use super::*;
     use crate::index::ignore_set::IgnoreSet;
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
 
     fn vault() -> (tempfile::TempDir, PathBuf) {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -366,7 +381,8 @@ mod tests {
     fn rename_moves_file_in_place() {
         let (_tmp, root) = vault();
         std::fs::write(root.join("old.md"), b"x").expect("seed");
-        let report = rename_note_in(&root, &IgnoreSet::new(), Path::new("old.md"), Path::new("new.md"))
+        let db_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+        let report = rename_note_in(&root, &IgnoreSet::new(), &db_path, Path::new("old.md"), Path::new("new.md"))
             .expect("ok");
         assert_eq!(report.from, "old.md");
         assert_eq!(report.to, "new.md");
@@ -379,7 +395,8 @@ mod tests {
         let (_tmp, root) = vault();
         std::fs::create_dir(root.join("dst")).expect("mkdir");
         std::fs::write(root.join("src.md"), b"x").expect("seed");
-        rename_note_in(&root, &IgnoreSet::new(), Path::new("src.md"), Path::new("dst/moved.md"))
+        let db_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+        rename_note_in(&root, &IgnoreSet::new(), &db_path, Path::new("src.md"), Path::new("dst/moved.md"))
             .expect("ok");
         assert!(!root.join("src.md").exists());
         assert!(root.join("dst/moved.md").exists());
@@ -388,7 +405,8 @@ mod tests {
     #[test]
     fn rename_missing_source_returns_not_found() {
         let (_tmp, root) = vault();
-        match rename_note_in(&root, &IgnoreSet::new(), Path::new("ghost.md"), Path::new("new.md")) {
+        let db_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+        match rename_note_in(&root, &IgnoreSet::new(), &db_path, Path::new("ghost.md"), Path::new("new.md")) {
             Err(AppError::NotFound { .. }) => {}
             other => panic!("expected NotFound, got {other:?}"),
         }
@@ -399,7 +417,8 @@ mod tests {
         let (_tmp, root) = vault();
         std::fs::write(root.join("a.md"), b"x").expect("seed");
         std::fs::write(root.join("b.md"), b"y").expect("seed");
-        match rename_note_in(&root, &IgnoreSet::new(), Path::new("a.md"), Path::new("b.md")) {
+        let db_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+        match rename_note_in(&root, &IgnoreSet::new(), &db_path, Path::new("a.md"), Path::new("b.md")) {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -411,7 +430,8 @@ mod tests {
     fn rename_rejects_destination_missing_parent() {
         let (_tmp, root) = vault();
         std::fs::write(root.join("a.md"), b"x").expect("seed");
-        match rename_note_in(&root, &IgnoreSet::new(), Path::new("a.md"), Path::new("nope/b.md")) {
+        let db_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+        match rename_note_in(&root, &IgnoreSet::new(), &db_path, Path::new("a.md"), Path::new("nope/b.md")) {
             Err(AppError::NotFound { .. }) => {}
             other => panic!("expected NotFound, got {other:?}"),
         }
@@ -422,7 +442,8 @@ mod tests {
     fn rename_rejects_non_note_extension_on_destination() {
         let (_tmp, root) = vault();
         std::fs::write(root.join("a.md"), b"x").expect("seed");
-        match rename_note_in(&root, &IgnoreSet::new(), Path::new("a.md"), Path::new("a.txt")) {
+        let db_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+        match rename_note_in(&root, &IgnoreSet::new(), &db_path, Path::new("a.md"), Path::new("a.txt")) {
             Err(AppError::InvalidArgument { .. }) => {}
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
@@ -606,9 +627,11 @@ mod tests {
         let from_expected = dir_canonical.join("old.md");
         let to_expected = dir_canonical.join("new.md");
         let ignore = IgnoreSet::new();
+        let db_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
         let _ = rename_note_in(
             &root,
             &ignore,
+            &db_path,
             Path::new("old.md"),
             Path::new("new.md"),
         )

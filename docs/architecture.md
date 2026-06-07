@@ -122,7 +122,7 @@ obsidiana/
 │   │   ├── error.rs                     # AppError enum (5 variants) + helpers + unit tests + From<rusqlite::Error> (3.1.1)
 │   │   ├── fs/
 │   │   │   ├── mod.rs
-│   │   │   ├── note.rs                  # create_note_in / delete_note_in / rename_note_in / write_note_in + NoteContent / RenameReport / WriteResult; each mutator records its absolute path into the IgnoreSet (3.2)
+│   │   │   ├── note.rs                  # create_note_in / delete_note_in / rename_note_in / write_note_in + NoteContent / RenameReport / WriteResult; each mutator records its absolute path into the IgnoreSet; rename_note_in also updates the index via apply_rename (3.2, 3.3)
 │   │   │   └── tree.rs                  # list_children + TreeNode / TreeNodeKind + is_hidden / is_allowed_note (3.1.x)
 │   │   ├── index/
 │   │   │   ├── mod.rs                   # re-exports + submodules
@@ -133,7 +133,7 @@ obsidiana/
 │   │   │   ├── ingest.rs                # scan_vault + index_file + ingest_all (transactional, on_progress, IngestReport) (3.1.x)
 │   │   │   ├── kick_off.rs              # vault open kick-off + IPC thin wrapper; calls ingest_all after open (3.1.2, 3.1.x); publishes state.index_db_path before spawn_blocking (3.2)
 │   │   │   ├── ignore_set.rs            # IgnoreSet (canonicalize + 1 s TTL Mutex<HashMap>) for self-write suppression (3.2)
-│   │   │   ├── ingest_incremental.rs    # apply_change / apply_deletion: transactional DELETE+INSERT in a new connection (WAL) (3.2)
+│   │   │   ├── ingest_incremental.rs    # apply_change / apply_deletion / apply_rename: transactional index updates for change/deletion/rename (WAL) (3.2, 3.3)
 │   │   │   ├── watcher_event.rs         # WatcherChange serde enum (tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase") (3.2)
 │   │   │   └── watcher.rs               # start / stop / handle_event; std::thread worker that owns a notify-debouncer-mini handle and emits WatcherChange over the Tauri event bus (3.2)
 │   │   ├── lib.rs                       # tauri::Builder, registers plugin + AppState + 18 handlers + stderr Log impl
@@ -257,7 +257,7 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `list_tree(path)` — returns the immediate children of `path` (or root when `None`), filtered to dirs + `.md`/`.markdown` files and sorted dirs-first then alpha. `path` is validated via `validate_relative_path`. (micro-feature 1.4)
 - `create_note(path, template)` — creates a new `.md`/`.markdown` file at `path` (relative, validated) with `template` as content (empty if `None`). Returns the new `NoteContent` (`{path, content, modified_at}`). Rejects collisions, non-`.md` extensions, and missing parents. (micro-feature 1.4)
 - `delete_note(path)` — removes the file at `path`. Refuses to delete directories. (micro-feature 1.4)
-- `rename_note(from, to)` — moves/renames a note within the vault. Both paths validated. Refuses collisions and missing source. (micro-feature 1.4)
+- `rename_note(from, to)` — moves/renames a note within the vault. Both paths validated. Refuses collisions and missing source. (micro-feature 1.4; index refactor in 3.3)
 - `read_note(path)` — returns `NoteContent` (`{path, content, modified_at}`) for a single note. UTF-8 validated; rejects missing files, directories, and non-`.md`/`.markdown` extensions. (micro-feature 1.5)
 - `write_note(path, content)` — overwrites (or creates) the note at `path` with `content`. Returns `WriteResult` (`{path, modified_at}`). Rejects missing parents, directory targets, and non-note extensions. (micro-feature 1.5)
 - `extract_wikilinks(path)` — reads the note at `path` and returns `Vec<WikilinkRef>` (`{target, alias, line}`) for every `[[note]]` / `[[note|alias]]` occurrence. Excludes embeds (`![[...]]`), skips empty targets, trims whitespace. Line numbers are 1-indexed. (micro-feature 2.1)
@@ -268,6 +268,7 @@ See `spec.md` §4 for the full contract. Implemented so far:
 - `index_status` — returns the current `IndexStatus` snapshot: `{ state: "missing" | "indexing" | "ready" | "broken" | "failed", schemaVer, documentCount, lastRebuiltAt, ... }`. The "indexing" variant carries `indexed: number | null` and `total: number | null` (live progress from the `ingest_all` `on_progress` callback); the "broken" variant carries `quarantinedTo: string`; the "failed" variant carries `message: string`. The snapshot lives on `AppState.index: Arc<Mutex<IndexStatus>>` and is safe to call when no vault is open (returns `Missing`). (micro-feature 3.1.2; payload enriched in 3.1.x)
 - `rebuild_index` — drops any existing `<vault>/.obsidiana/index.db`, reopens the connection, runs the schema migrations, and runs the `ingest_all` engine to repopulate `documents` / `connections` / `tags`. The snapshot flips to `Indexing` with live `(indexed, total)` updates from the `on_progress` callback, then to `Ready` (or `Failed` on error) when the transaction commits. Returns `Ok(())` on success; `AppError::Busy` if a rebuild is already in flight; `AppError::InvalidArgument` if no vault is open. (micro-feature 3.1.2; ingest wired in 3.1.x)
 - *no new IPC in 3.2* — the filesystem watcher is the first feature to use the **Tauri event bus** as its delivery mechanism. The Rust worker thread emits `WatcherChange` payloads on the `obsidiana://fs-change` channel via `app.emit(channel, payload)`. The TS `onFileChange` wrapper in `src/ipc/watcher.ts` subscribes via `@tauri-apps/api/event::listen`. The `IndexStatusChip` polling loop is **unchanged** in 3.2 — only the file-changed signal moves to events. (micro-feature 3.2)
+- *no new IPC in 3.3* — the existing `rename_note` IPC now updates the SQLite index atomically inside `rename_note_in` via `apply_rename`. The index update preserves the document `id` (so outgoing connections survive) and rewrites incoming `connections.target_path` rows. Errors are logged but do not fail the rename; the next `rebuild_index` heals the index. (micro-feature 3.3)
 
 To be implemented (stages 1-5): all others from `spec.md` §4.
 
@@ -2043,6 +2044,60 @@ now calls `watcher::stop` (releasing the worker thread) and
 - **Per-vault worker pool.** Today there is at most one watcher
   per app instance, scoped to the active vault. Multiple-vault
   workflow is a stage 5+ concern (after Git sync multi-vault).
+
+## Rename refactor (micro-feature 3.3)
+
+3.3 ships real-time link refactor when a note is renamed or moved
+within the vault. The index update is performed atomically inside
+`rename_note_in` (the same code path that does the filesystem
+`std::fs::rename`), so the index is never observably half-renamed.
+
+### Architecture
+
+`src/index/ingest_incremental.rs` gains `apply_rename(conn,
+old_rel, new_rel)` which runs a single transaction:
+
+```sql
+UPDATE documents SET file_path = ?new WHERE file_path = ?old;
+UPDATE connections SET target_path = ?new WHERE target_path = ?old;
+```
+
+- The `documents` row is updated in place (preserving its `id`), so
+  outgoing connections (`source_id` FK) survive unchanged.
+- Incoming connections (`target_path`) are rewritten to the new
+  path. This is the "link refactor" the MVP spec calls for.
+- `tags` are untouched — they reference `documents.id` and cascade
+  automatically.
+
+`fs/note.rs::rename_note_in` accepts the existing
+`index_db_path: Arc<Mutex<Option<PathBuf>>>` (already present on
+`AppState` for the watcher) and, after the filesystem rename
+succeeds, opens a fresh `Connection` to the index DB and calls
+`apply_rename`. Errors are logged `warn!` but do not fail the
+rename — the next `rebuild_index` heals the index.
+
+### Decision row (3.3)
+
+| Question | Answer | Why |
+| --- | --- | --- |
+| In-app renames only, or also external (OS file-manager)? | In-app only. | `rename_note_in` already knows old + new paths atomically. External detection requires correlating `delete(old)` + `change(new)` inside the 200 ms debounce window — harder and deferrable to 3.3.1. |
+| Where does the index update live? | Inside `rename_note_in`. | One transaction, no debounce correlation needed. Watcher still suppresses the two events via `IgnoreSet`. |
+| Frontend reaction if the open note is renamed? | Not in 3.3. | Spec §6.4 ("saved to <new path>") targets tabbed editing (1.5.1+). Our single-editor 1.5 stays on the old path until the user re-selects the file in the tree. 3.3.x can add a `Renamed` event variant and editor reconcile. |
+
+### Tests added
+
+- `index::ingest_incremental::tests::apply_rename_updates_document_file_path` — document row path updated, `id` preserved.
+- `apply_rename_refactors_incoming_connection_target_paths` — incoming `target_path` rows rewritten.
+- `apply_rename_preserves_outgoing_connections_via_fk` — outgoing connections survive via same `doc_id`.
+- `apply_rename_is_noop_when_old_does_not_exist` — no panic, no rows touched.
+- `tests/tree_crud.rs::rename_note_updates_index_documents_file_path` — IPC-level test through `rename_note_inner`.
+- `rename_note_refactors_incoming_connection_target_paths` — IPC-level test verifying incoming links refactored.
+
+### What's NOT in 3.3 (deferred to 3.3.1 / 3.3.x)
+
+- **External-rename detection** (OS file manager renames).
+- **`WatcherEvent::Renamed` variant + frontend reconcile** for the currently-open note.
+- **Tabs / "saved to <new path>" badge** (spec §6.4, needs 1.5.1+).
 
 ## Open Questions / Backlog
 

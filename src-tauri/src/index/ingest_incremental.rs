@@ -65,6 +65,25 @@ pub fn apply_deletion(conn: &Connection, rel_path: &str) -> AppResult<()> {
     Ok(())
 }
 
+pub fn apply_rename(conn: &Connection, old_rel: &str, new_rel: &str) -> AppResult<()> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| AppError::internal(format!("begin tx: {e}")))?;
+    conn.execute(
+        "UPDATE documents SET file_path = ?1 WHERE file_path = ?2",
+        rusqlite::params![new_rel, old_rel],
+    )
+    .map_err(|e| AppError::internal(format!("update document path {old_rel} -> {new_rel}: {e}")))?;
+    conn.execute(
+        "UPDATE connections SET target_path = ?1 WHERE target_path = ?2",
+        rusqlite::params![new_rel, old_rel],
+    )
+    .map_err(|e| AppError::internal(format!("update connection targets {old_rel} -> {new_rel}: {e}")))?;
+    tx.commit()
+        .map_err(|e| AppError::internal(format!("commit: {e}")))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +212,79 @@ mod tests {
             .expect("count");
         assert_eq!(before_tags, after_tags);
         assert_eq!(before_conns, after_conns);
+    }
+
+    #[test]
+    fn apply_rename_updates_document_file_path() {
+        let (_tmp, vault, conn) = make_db();
+        let file = write_note(&vault, "old.md", "# old\n\n[[target]]\n");
+        apply_change(&conn, &vault, &file).expect("apply");
+        let doc_id_before: i64 = conn
+            .query_row("SELECT id FROM documents WHERE file_path = 'old.md'", [], |r| r.get(0))
+            .expect("doc id before");
+        apply_rename(&conn, "old.md", "new.md").expect("rename");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM documents", [], |r| r.get(0))
+            .expect("count docs");
+        assert_eq!(count, 1);
+        let doc_id_after: i64 = conn
+            .query_row("SELECT id FROM documents WHERE file_path = 'new.md'", [], |r| r.get(0))
+            .expect("doc id after");
+        assert_eq!(doc_id_after, doc_id_before, "document id must be preserved");
+    }
+
+    #[test]
+    fn apply_rename_refactors_incoming_connection_target_paths() {
+        let (_tmp, vault, conn) = make_db();
+        let source = write_note(&vault, "source.md", "# src\n\n[[old.md]]\n");
+        let other = write_note(&vault, "other.md", "# other\n\n[[old.md]]\n");
+        let src = write_note(&vault, "old.md", "# old\n\nbody\n");
+        apply_change(&conn, &vault, &src).expect("apply old");
+        apply_change(&conn, &vault, &source).expect("apply source");
+        apply_change(&conn, &vault, &other).expect("apply other");
+        // Two incoming connections to "old.md" (using path-style wikilink with .md)
+        let before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM connections WHERE target_path = 'old.md'", [], |r| r.get(0))
+            .expect("count before");
+        assert_eq!(before, 2);
+        apply_rename(&conn, "old.md", "new.md").expect("rename");
+        let after_old: i64 = conn
+            .query_row("SELECT COUNT(*) FROM connections WHERE target_path = 'old.md'", [], |r| r.get(0))
+            .expect("count old");
+        let after_new: i64 = conn
+            .query_row("SELECT COUNT(*) FROM connections WHERE target_path = 'new.md'", [], |r| r.get(0))
+            .expect("count new");
+        assert_eq!(after_old, 0);
+        assert_eq!(after_new, 2);
+    }
+
+    #[test]
+    fn apply_rename_preserves_outgoing_connections_via_fk() {
+        let (_tmp, vault, conn) = make_db();
+        let file = write_note(&vault, "old.md", "# old\n\n[[a]] [[b]]\n");
+        apply_change(&conn, &vault, &file).expect("apply");
+        let doc_id: i64 = conn
+            .query_row("SELECT id FROM documents WHERE file_path = 'old.md'", [], |r| r.get(0))
+            .expect("doc id");
+        let before_conns: i64 = conn
+            .query_row("SELECT COUNT(*) FROM connections WHERE source_id = ?1", rusqlite::params![doc_id], |r| r.get(0))
+            .expect("count");
+        assert_eq!(before_conns, 2);
+        apply_rename(&conn, "old.md", "new.md").expect("rename");
+        let after_conns: i64 = conn
+            .query_row("SELECT COUNT(*) FROM connections WHERE source_id = ?1", rusqlite::params![doc_id], |r| r.get(0))
+            .expect("count after");
+        assert_eq!(after_conns, 2, "outgoing connections preserved via same doc id");
+    }
+
+    #[test]
+    fn apply_rename_is_noop_when_old_does_not_exist() {
+        let (_tmp, _vault, conn) = make_db();
+        // No prior apply_change for "ghost.md"
+        apply_rename(&conn, "ghost.md", "new.md").expect("no-op rename");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM documents", [], |r| r.get(0))
+            .expect("count");
+        assert_eq!(count, 0);
     }
 }

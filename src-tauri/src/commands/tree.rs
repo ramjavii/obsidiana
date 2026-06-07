@@ -82,7 +82,7 @@ pub fn rename_note_inner(
     let vault_root = require_vault_root(&state)?;
     let rel_from = validate_relative_path(&from)?;
     let rel_to = validate_relative_path(&to)?;
-    rename_note_in(&vault_root, &state.ignore_set, &rel_from, &rel_to)
+    rename_note_in(&vault_root, &state.ignore_set, &state.index_db_path, &rel_from, &rel_to)
 }
 
 #[tauri::command]

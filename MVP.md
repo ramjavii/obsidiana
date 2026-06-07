@@ -55,7 +55,7 @@ Indexing & graph:
   - [x] 3.2: debounced filesystem watcher (200 ms) keeping the index in sync
     - 200 ms `notify` + `notify-debouncer-mini` debouncer over the vault root; ignores dotfiles, hidden-dir components, `.obsidiana/`, `.db`/`.db-wal`/`.db-shm`, paths outside the vault, and self-writes recorded into a 1 s TTL `IgnoreSet` (see `docs/architecture.md` 3.2 section)
     - Tauri event bus: `obsidiana://fs-change` with `WatcherChange = { kind: "changed", path } | { kind: "deleted", path }`; emitted from the worker thread, consumed in the Editor via `useWatcher` (silent re-read on clean buffer, `data-testid="fs-change-reload-needed"` placeholder banner on dirty buffer; visible Reload/Discard banner is a 3.2.1 follow-up)
-  - [ ] 3.3: real-time link refactor on file rename/move
+  - [x] 3.3: real-time link refactor on file rename/move
 - [ ] Force-directed graph view (repulsion + link tension + gravity)
 - [ ] Local graph filter (N-hop neighborhood of the active note)
 - [ ] Label opacity fading on zoom

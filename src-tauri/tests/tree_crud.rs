@@ -4,6 +4,7 @@ use obsidiana_lib::fs::tree::TreeNodeKind;
 use obsidiana_lib::state::{AppState, VaultHandle};
 use chrono::Utc;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use tauri::test::{mock_builder, mock_context, noop_assets};
 use tauri::Manager;
 
@@ -34,6 +35,21 @@ fn write(root: &Path, rel: &str) {
         std::fs::create_dir_all(parent).expect("create parents");
     }
     std::fs::write(&p, b"# test\n").expect("write");
+}
+
+fn seed_index_with_vault(vault: &Path) -> Arc<Mutex<Option<PathBuf>>> {
+    use obsidiana_lib::index::db::IndexDb;
+    let _db = IndexDb::open(vault).expect("open index");
+    let db_path = vault.join(".obsidiana").join("index.db");
+    Arc::new(Mutex::new(Some(db_path)))
+}
+
+fn write_with_content(root: &Path, rel: &str, content: &str) {
+    let p = root.join(rel);
+    if let Some(parent) = p.parent() {
+        std::fs::create_dir_all(parent).expect("create parents");
+    }
+    std::fs::write(&p, content).expect("write");
 }
 
 fn names(nodes: &[obsidiana_lib::fs::tree::TreeNode]) -> Vec<&str> {
@@ -332,4 +348,89 @@ fn rename_note_rejects_dotdot_in_destination() {
         Err(AppError::InvalidArgument { .. }) => {}
         other => panic!("expected InvalidArgument, got {other:?}"),
     }
+}
+
+#[test]
+fn rename_note_updates_index_documents_file_path() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let vault = tmp.path().join("vault");
+    std::fs::create_dir(&vault).expect("mkdir");
+    let db_arc = seed_index_with_vault(&vault);
+    write_with_content(&vault, "old.md", "# old\n\n[[target]]\n");
+    let app = build_app_with_vault(&vault);
+    let state = app.state::<AppState>();
+    {
+        let mut guard = state.index_db_path.lock().expect("lock");
+        *guard = db_arc.lock().expect("lock").clone();
+    }
+    // First index the file
+    let conn = rusqlite::Connection::open(vault.join(".obsidiana").join("index.db")).expect("conn");
+    let old_file = vault.join("old.md");
+    obsidiana_lib::index::ingest_incremental::apply_change(&conn, &vault, &old_file).expect("index old");
+    // Now rename
+    let report = tree::rename_note_inner(
+        state,
+        "old.md".to_string(),
+        "new.md".to_string(),
+    )
+    .expect("ok");
+    assert_eq!(report.from, "old.md");
+    assert_eq!(report.to, "new.md");
+    assert!(!vault.join("old.md").exists());
+    assert!(vault.join("new.md").exists());
+    // Verify the index was updated
+    let doc_id: i64 = conn
+        .query_row("SELECT id FROM documents WHERE file_path = 'new.md'", [], |r| r.get(0))
+        .expect("doc id");
+    assert!(doc_id > 0);
+    let old_exists: i64 = conn
+        .query_row("SELECT COUNT(*) FROM documents WHERE file_path = 'old.md'", [], |r| r.get(0))
+        .expect("old count");
+    assert_eq!(old_exists, 0);
+}
+
+#[test]
+fn rename_note_refactors_incoming_connection_target_paths() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let vault = tmp.path().join("vault");
+    std::fs::create_dir(&vault).expect("mkdir");
+    let db_arc = seed_index_with_vault(&vault);
+    write_with_content(&vault, "old.md", "# old\n\nbody\n");
+    write_with_content(&vault, "source.md", "# src\n\n[[old.md]]\n");
+    write_with_content(&vault, "other.md", "# other\n\n[[old.md]]\n");
+    let app = build_app_with_vault(&vault);
+    let state = app.state::<AppState>();
+    {
+        let mut guard = state.index_db_path.lock().expect("lock");
+        *guard = db_arc.lock().expect("lock").clone();
+    }
+    // Index all three notes
+    let conn = rusqlite::Connection::open(vault.join(".obsidiana").join("index.db")).expect("conn");
+    let old_file = vault.join("old.md");
+    let source_file = vault.join("source.md");
+    let other_file = vault.join("other.md");
+    obsidiana_lib::index::ingest_incremental::apply_change(&conn, &vault, &old_file).expect("index old");
+    obsidiana_lib::index::ingest_incremental::apply_change(&conn, &vault, &source_file).expect("index source");
+    obsidiana_lib::index::ingest_incremental::apply_change(&conn, &vault, &other_file).expect("index other");
+    // Two incoming connections to "old.md"
+    let before: i64 = conn
+        .query_row("SELECT COUNT(*) FROM connections WHERE target_path = 'old.md'", [], |r| r.get(0))
+        .expect("count before");
+    assert_eq!(before, 2);
+    // Now rename via the command
+    tree::rename_note_inner(
+        state,
+        "old.md".to_string(),
+        "new.md".to_string(),
+    )
+    .expect("ok");
+    // Verify incoming connections were refactored
+    let after_old: i64 = conn
+        .query_row("SELECT COUNT(*) FROM connections WHERE target_path = 'old.md'", [], |r| r.get(0))
+        .expect("count old");
+    let after_new: i64 = conn
+        .query_row("SELECT COUNT(*) FROM connections WHERE target_path = 'new.md'", [], |r| r.get(0))
+        .expect("count new");
+    assert_eq!(after_old, 0);
+    assert_eq!(after_new, 2);
 }
