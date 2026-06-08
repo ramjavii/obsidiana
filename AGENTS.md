@@ -99,6 +99,13 @@ immediately update `/docs/architecture.md` with:
 Do this in the same commit as the code change. A commit that adds code
 without updating `docs/architecture.md` is incomplete.
 
+## Memory Constraints
+
+Each `vitest` process consumes ~3 GB of RAM. **Never** run more than
+one `vitest` (or `npm test`) process at a time. Do not launch parallel
+test runs across test files. Always use a single `vitest run` or
+`vitest run <specific-file>` sequentially.
+
 ## Testing Discipline
 
 - TDD: write the failing test first for every non-trivial behavior. The

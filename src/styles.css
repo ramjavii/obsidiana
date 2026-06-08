@@ -89,6 +89,14 @@
   cursor: pointer;
 }
 
+.cm-md-wikilink-bracket {
+  opacity: 0;
+}
+
+.cm-wikilink-cursor-inside .cm-md-wikilink-bracket {
+  opacity: 1;
+}
+
 .cm-wikilink-resolved {
   color: rgb(134, 239, 172) !important;
   cursor: pointer;
