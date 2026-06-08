@@ -70,19 +70,6 @@ export function GraphView({ activePath, onNodeClick }: Props) {
     [query.data, activePath],
   );
 
-  const prevActiveRef = useRef(activePath);
-  const accumulatedHighlight = useRef(new Set<string>());
-  if (activePath !== prevActiveRef.current) {
-    prevActiveRef.current = activePath;
-    if (!activePath) {
-      accumulatedHighlight.current.clear();
-    } else if (highlightSet) {
-      for (const id of highlightSet) {
-        accumulatedHighlight.current.add(id);
-      }
-    }
-  }
-
   if (query.isPending) {
     return (
       <div
@@ -135,7 +122,7 @@ export function GraphView({ activePath, onNodeClick }: Props) {
           nodeColor={(node) => {
             const id = (node as GraphNode).id;
             if (id === activePath) return "#10b981";
-            if (accumulatedHighlight.current.has(id)) return "#fbbf24";
+            if (highlightSet?.has(id)) return "#fbbf24";
             return "#52525b";
           }}
           linkColor={(link) =>
@@ -176,7 +163,7 @@ export function GraphView({ activePath, onNodeClick }: Props) {
 
             ctx.beginPath();
             ctx.arc(x, y, r, 0, 2 * Math.PI);
-            ctx.fillStyle = n.id === activePath ? "#10b981" : accumulatedHighlight.current.has(n.id) ? "#fbbf24" : "#52525b";
+            ctx.fillStyle = n.id === activePath ? "#10b981" : highlightSet?.has(n.id) ? "#fbbf24" : "#52525b";
             ctx.fill();
             ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
             ctx.lineWidth = 1 / globalScale;
@@ -188,7 +175,7 @@ export function GraphView({ activePath, onNodeClick }: Props) {
               ctx.strokeStyle = "rgba(16, 185, 129, 0.5)";
               ctx.lineWidth = 3 / globalScale;
               ctx.stroke();
-            } else if (accumulatedHighlight.current.has(n.id)) {
+            } else if (highlightSet?.has(n.id)) {
               ctx.beginPath();
               ctx.arc(x, y, r + 6 / globalScale, 0, 2 * Math.PI);
               ctx.strokeStyle = "rgba(251, 191, 36, 0.45)";
