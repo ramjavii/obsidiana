@@ -42,9 +42,11 @@ Core editor & linking:
 - [x] Tags `#parent/child` extracted and listed per note
   - [x] 2.8: extract tags via Rust preprocessor (IPC: `get_tags_for_note`)
   - [x] 2.8: tags displayed in the right-pane TagsPanel (chip strip with count, error, empty states)
+  - [x] 2.8.x: tags from `Tags: [[wikilink]]` metadata line also extracted
 - [x] Backlinks panel showing incoming links to the active note
   - [x] 2.9: `get_backlinks` IPC command querying the SQLite index
   - [x] 2.9: BacklinksPanel component with loading/error/empty/list states
+- [x] 2.10: empty note editor shows title as placeholder (CodeMirror placeholder extension)
 - [ ] Custom callouts / admonitions via Rust regex preprocessor
 - [ ] Note embeds `![[note#section]]` with recursion limit (3 levels)
 - [ ] Block references `^block-id` registered as linkable targets
@@ -62,6 +64,7 @@ Indexing & graph:
 - [x] 4.1: Force-directed graph view (repulsion + link tension + gravity); `graph_snapshot` IPC; "Graph" tab in right pane
 - [x] 4.2: Local graph filter (N-hop neighborhood of the active note); orphan toggle in filter controls
 - [x] 4.3: Label opacity fading on zoom (nodeCanvasObject with zoom-dependent alpha)
+- [x] 4.4: empty/tag nodes visually distinguished in graph (diamond shape vs circle, muted colors)
 
 Sync & publishing:
 

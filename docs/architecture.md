@@ -2424,6 +2424,55 @@ src/
 └── __tests__/GraphView.test.tsx (removed N-hop tests, added single-graph test)
 ```
 
+## 2026-06-07 — Vault compatibility: adapt for ramjavii/mi-vault format
+
+The user's vault uses an Obsidian-style format where tags are written as
+`Tags: [[Uptp]] [[Physics]]` (wikilinks on a metadata line) rather than
+inline `#tag` syntax. The app was adapted to recognize this convention.
+
+### Changes
+
+1. **Tags from `Tags:` wikilink line** (`src-tauri/src/markdown/tag.rs`):
+   New `extract_tags_from_wikilinks()` function parses lines matching
+   `Tags: [[tag1]] [[tag2]]` (case-insensitive) and returns each wikilink
+   target as a `TagRef`. The function is called alongside the existing
+   `extract_tags()` in `ingest.rs::index_file()` so both tag sources produce
+   `TagRow` entries.
+
+2. **Empty note title in editor** (`src/components/Editor.tsx`):
+   When a note has no content (e.g. the 33 tag-index files in `2. Tags/`),
+   CodeMirror's `placeholder` extension now shows the file stem as dimmed
+   placeholder text, so the title is always visible in the editor.
+
+3. **Graph node type metadata** (`src-tauri/src/index/schema.rs`,
+   `src-tauri/src/index/ingest.rs`, `src-tauri/src/commands/graph.rs`,
+   `src/components/GraphView.tsx`):
+   - Schema v1→v2 migration adds `content_size INTEGER NOT NULL DEFAULT 0` to
+     `documents` table. Both `ingest_all` and `apply_change` write this field.
+   - `GraphNode` now includes `is_empty: bool` derived from `content_size == 0`.
+   - Empty nodes render as smaller diamonds (vs circles for content nodes) with
+     muted `#3f3f46` fill and dimmer labels, making tag notes visually distinct
+     from content-rich notes.
+
+### New IPC / schema changes
+
+- None. The `content_size` column is internal; `graph_snapshot` still returns
+  the same wire format but with an additional `is_empty` boolean field on each
+  node.
+
+### Touched files
+
+```
+src-tauri/src/markdown/tag.rs              (+93 lines: new function + 10 tests)
+src-tauri/src/index/ingest.rs              (+40 lines: content_size in DocumentRow, INSERT, merged tags)
+src-tauri/src/index/ingest_incremental.rs   (+5 lines: content_size in INSERT)
+src-tauri/src/index/schema.rs               (+12 lines: schema v2, ALTER TABLE migration)
+src-tauri/src/commands/graph.rs             (+5 lines: content_size SELECT, is_empty field)
+src/components/Editor.tsx                   (+4 lines: placeholder extension for empty content)
+src/components/GraphView.tsx               (refactored drawNode, empty node as diamond)
+src/types/index.ts                          (+1 line: isEmpty on GraphNode)
+```
+
 ## Open Questions / Backlog
 
 - ~~Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a
