@@ -7,7 +7,10 @@ import type { AppError } from "@/errors";
 import type { GraphData, GraphLink, GraphNode } from "@/types/index";
 
 function getLinkEndpoints(link: GraphLink): [string, string] {
-  return [link.source, link.target];
+  return [
+    typeof link.source === "string" ? link.source : (link.source as { id: string }).id,
+    typeof link.target === "string" ? link.target : (link.target as { id: string }).id,
+  ];
 }
 
 function computeHighlightSet(
