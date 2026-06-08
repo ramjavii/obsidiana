@@ -8,6 +8,7 @@ export type IndexStateKind =
 export interface GraphNode {
   id: string;
   title: string;
+  isEmpty?: boolean;
 }
 
 export interface GraphLink {

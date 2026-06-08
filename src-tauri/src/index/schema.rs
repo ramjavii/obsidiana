@@ -1,7 +1,7 @@
 use crate::error::AppResult;
 use rusqlite::Connection;
 
-pub const INDEX_SCHEMA_VER: u32 = 1;
+pub const INDEX_SCHEMA_VER: u32 = 2;
 
 pub const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS documents (
@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS documents (
     file_path         TEXT    UNIQUE NOT NULL,
     title             TEXT    NOT NULL,
     last_modified     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    frontmatter_json  TEXT    NULL
+    frontmatter_json  TEXT    NULL,
+    content_size      INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_documents_title ON documents(title);
 CREATE INDEX IF NOT EXISTS idx_documents_path  ON documents(file_path);
@@ -57,6 +58,13 @@ pub fn run_migrations(conn: &Connection) -> AppResult<()> {
         )));
     }
     conn.execute_batch(SCHEMA_SQL)?;
+
+    if current_u32 == 1 {
+        conn.execute_batch(
+            "ALTER TABLE documents ADD COLUMN content_size INTEGER NOT NULL DEFAULT 0",
+        )?;
+    }
+
     conn.execute_batch(&format!("PRAGMA user_version = {INDEX_SCHEMA_VER};"))?;
     conn.execute(
         "INSERT OR IGNORE INTO vault_meta (id, schema_ver) VALUES (1, ?1)",

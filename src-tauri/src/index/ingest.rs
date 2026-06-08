@@ -5,7 +5,7 @@ use walkdir::WalkDir;
 use crate::error::{AppError, AppResult};
 use crate::fs::tree::{is_allowed_note, is_hidden, TreeNodeKind};
 use crate::index::extract::{content_hash, extract_title};
-use crate::markdown::tag::extract_tags;
+use crate::markdown::tag::{extract_tags, extract_tags_from_wikilinks};
 use crate::markdown::wikilink::extract_wikilinks;
 
 pub fn scan_vault(root: &Path) -> AppResult<Vec<PathBuf>> {
@@ -65,6 +65,7 @@ pub struct DocumentRow {
     pub file_path: String,
     pub title: String,
     pub last_modified: i64,
+    pub content_size: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,11 +137,12 @@ pub fn ingest_all(
         };
 
         conn.execute(
-            "INSERT OR REPLACE INTO documents (file_path, title, last_modified) VALUES (?1, ?2, ?3)",
+            "INSERT OR REPLACE INTO documents (file_path, title, last_modified, content_size) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![
                 indexed.document.file_path,
                 indexed.document.title,
-                indexed.document.last_modified
+                indexed.document.last_modified,
+                indexed.document.content_size
             ],
         )
         .map_err(|e| {
@@ -218,6 +220,7 @@ pub fn index_file(root: &Path, file: &Path) -> AppResult<IndexedFile> {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
+    let content_size = content.len() as i64;
     let _ = content_hash(&content);
 
     let mut connections: Vec<ConnectionRow> = Vec::new();
@@ -230,19 +233,26 @@ pub fn index_file(root: &Path, file: &Path) -> AppResult<IndexedFile> {
         });
     }
 
-    let tags: Vec<TagRow> = extract_tags(&content)
+    let mut tags: Vec<TagRow> = extract_tags(&content)
         .into_iter()
         .map(|t| TagRow {
             path: rel.clone(),
             name: t.name,
         })
         .collect();
+    for t in extract_tags_from_wikilinks(&content) {
+        tags.push(TagRow {
+            path: rel.clone(),
+            name: t.name,
+        });
+    }
 
     Ok(IndexedFile {
         document: DocumentRow {
             file_path: rel,
             title,
             last_modified,
+            content_size,
         },
         connections,
         tags,
@@ -423,6 +433,28 @@ mod tests {
         let names: Vec<&str> = indexed.tags.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"idea"));
         assert!(names.contains(&"project/2-8"));
+        for t in &indexed.tags {
+            assert_eq!(t.path, "tagged.md");
+        }
+    }
+
+    #[test]
+    fn index_file_extracts_tags_from_wikilink_line() {
+        let tmp = make_vault();
+        write(
+            tmp.path(),
+            "tagged.md",
+            "Status: [[baby]]\nTags: [[Uptp]] [[Physics]]\n\n# Title\n",
+        );
+        let file = tmp.path().join("tagged.md");
+        let indexed = index_file(tmp.path(), &file).expect("index");
+        let names: std::collections::BTreeSet<&str> =
+            indexed.tags.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains("Uptp"), "should extract Uptp from Tags: line");
+        assert!(
+            names.contains("Physics"),
+            "should extract Physics from Tags: line"
+        );
         for t in &indexed.tags {
             assert_eq!(t.path, "tagged.md");
         }

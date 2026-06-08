@@ -8,6 +8,7 @@ import {
 import {
   EditorView,
   keymap,
+  placeholder,
 } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
@@ -80,6 +81,8 @@ export function Editor({
 
   const [status, setStatus] = useState<Status>("loading");
   const [needsReload, setNeedsReload] = useState(false);
+
+  const displayTitle = path.split("/").pop()?.replace(/\.(md|markdown)$/i, "") ?? path;
 
   const read = useReadNote(path);
   const write = useWriteNoteMutation();
@@ -283,6 +286,7 @@ export function Editor({
         saveKeymap,
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         updateListener,
+        ...(read.data.content === "" ? [placeholder(displayTitle)] : []),
       ];
 
       const state = EditorState.create({

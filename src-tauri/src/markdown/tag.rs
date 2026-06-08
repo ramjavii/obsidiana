@@ -31,6 +31,27 @@ pub fn extract_tags(content: &str) -> Vec<TagRef> {
     out
 }
 
+pub fn extract_tags_from_wikilinks(content: &str) -> Vec<TagRef> {
+    let mut out = Vec::new();
+    for (line_idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if !trimmed.to_lowercase().starts_with("tags:") {
+            continue;
+        }
+        let after_colon = &trimmed["tags:".len()..].trim();
+        if after_colon.is_empty() {
+            continue;
+        }
+        for m in crate::markdown::wikilink::wikilink_ranges(after_colon) {
+            out.push(TagRef {
+                name: m.target,
+                line: line_idx + 1,
+            });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,6 +186,78 @@ mod tests {
                 name: "FFFFFF".to_string(),
                 line: 1,
             }]
+        );
+    }
+
+    #[test]
+    fn wikilink_tags_empty_content_returns_empty() {
+        assert_eq!(extract_tags_from_wikilinks(""), vec![]);
+    }
+
+    #[test]
+    fn wikilink_tags_single_tag_from_tags_line() {
+        let result = extract_tags_from_wikilinks("Tags: [[Uptp]]");
+        assert_eq!(
+            result,
+            vec![TagRef { name: "Uptp".to_string(), line: 1 }]
+        );
+    }
+
+    #[test]
+    fn wikilink_tags_multiple_tags_on_same_line() {
+        let result = extract_tags_from_wikilinks("Tags: [[Uptp]] [[Physics]] [[Physics ch-21]]");
+        assert_eq!(
+            result,
+            vec![
+                TagRef { name: "Uptp".to_string(), line: 1 },
+                TagRef { name: "Physics".to_string(), line: 1 },
+                TagRef { name: "Physics ch-21".to_string(), line: 1 },
+            ]
+        );
+    }
+
+    #[test]
+    fn wikilink_tags_case_insensitive() {
+        let result = extract_tags_from_wikilinks("tags: [[alpha]]\nTAGS: [[beta]]");
+        assert_eq!(
+            result,
+            vec![
+                TagRef { name: "alpha".to_string(), line: 1 },
+                TagRef { name: "beta".to_string(), line: 2 },
+            ]
+        );
+    }
+
+    #[test]
+    fn wikilink_tags_line_number_correct() {
+        let result = extract_tags_from_wikilinks("Status: [[baby]]\nTags: [[a]] [[b]]\n\nBody");
+        assert_eq!(
+            result,
+            vec![
+                TagRef { name: "a".to_string(), line: 2 },
+                TagRef { name: "b".to_string(), line: 2 },
+            ]
+        );
+    }
+
+    #[test]
+    fn wikilink_tags_no_tags_line_returns_empty() {
+        let result = extract_tags_from_wikilinks("Status: [[baby]]\n\n# hello");
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn wikilink_tags_empty_after_colon_returns_empty() {
+        let result = extract_tags_from_wikilinks("Tags:");
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn wikilink_tags_works_with_leading_whitespace() {
+        let result = extract_tags_from_wikilinks("  Tags: [[hello]]");
+        assert_eq!(
+            result,
+            vec![TagRef { name: "hello".to_string(), line: 1 }]
         );
     }
 }

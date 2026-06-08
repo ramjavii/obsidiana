@@ -11,6 +11,7 @@ use super::tree::require_vault_root;
 pub struct GraphNode {
     pub id: String,
     pub title: String,
+    pub is_empty: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,13 +52,15 @@ pub async fn graph_snapshot(state: tauri::State<'_, AppState>) -> AppResult<Grap
             .map_err(|e| AppError::internal(format!("open index db: {e}")))?;
 
         let mut node_stmt = conn
-            .prepare("SELECT file_path, title FROM documents")
+            .prepare("SELECT file_path, title, content_size FROM documents")
             .map_err(|e| AppError::internal(format!("prepare nodes: {e}")))?;
         let nodes: Vec<GraphNode> = node_stmt
             .query_map([], |row| {
+                let content_size: i64 = row.get(2)?;
                 Ok(GraphNode {
                     id: row.get(0)?,
                     title: row.get(1)?,
+                    is_empty: content_size == 0,
                 })
             })
             .map_err(|e| AppError::internal(format!("query nodes: {e}")))?

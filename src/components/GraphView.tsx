@@ -133,54 +133,85 @@ export function GraphView({ activePath, onNodeClick }: Props) {
     }
   }, []);
 
+  function drawNode(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    r: number,
+    isEmpty: boolean,
+    active: boolean,
+    child: boolean,
+    hovered: boolean,
+    globalScale: number,
+  ) {
+    ctx.beginPath();
+    if (isEmpty) {
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + r * 0.7, y);
+      ctx.lineTo(x, y + r);
+      ctx.lineTo(x - r * 0.7, y);
+      ctx.closePath();
+    } else {
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+    }
+
+    ctx.fillStyle = active
+      ? "#10b981"
+      : child
+        ? "#fbbf24"
+        : isEmpty
+          ? "#3f3f46"
+          : hovered
+            ? "#71717a"
+            : "#52525b";
+    ctx.fill();
+    ctx.strokeStyle = isEmpty ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.15)";
+    ctx.lineWidth = 1 / globalScale;
+    ctx.stroke();
+
+    if (active) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + 8 / globalScale, 0, 2 * Math.PI);
+      ctx.strokeStyle = "rgba(16, 185, 129, 0.5)";
+      ctx.lineWidth = 3 / globalScale;
+      ctx.stroke();
+    } else if (child) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + 6 / globalScale, 0, 2 * Math.PI);
+      ctx.strokeStyle = "rgba(251, 191, 36, 0.45)";
+      ctx.lineWidth = 2.5 / globalScale;
+      ctx.stroke();
+    }
+
+    if (hovered && !active && !child) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + 5 / globalScale, 0, 2 * Math.PI);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+      ctx.lineWidth = 2 / globalScale;
+      ctx.stroke();
+    }
+  }
+
   const nodeCanvasObject = useCallback(
     (node: { x?: number; y?: number; id: string; title?: string }, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const n = node as GraphNode;
       const label = n.title ?? n.id ?? "";
-      const r = n.id === activePath
-        ? Math.sqrt(6 / 6) * 6
-        : Math.sqrt(1.5 / 6) * 6;
-      const x = node.x ?? 0;
-      const y = node.y ?? 0;
+      const isEmpty = n.isEmpty ?? false;
+      const isActive = n.id === activePath;
+      const isChild = childrenSet?.has(n.id) ?? false;
       const isHovered = n.id === hoveredNodeId.current;
 
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, 2 * Math.PI);
-      ctx.fillStyle = n.id === activePath
-        ? "#10b981"
-        : childrenSet?.has(n.id)
-          ? "#fbbf24"
-          : isHovered
-            ? "#71717a"
-            : "#52525b";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
-      ctx.lineWidth = 1 / globalScale;
-      ctx.stroke();
+      const r = isActive
+        ? Math.sqrt(6 / 6) * 6
+        : isEmpty
+          ? Math.sqrt(1.2 / 6) * 6 * 0.85
+          : Math.sqrt(1.5 / 6) * 6;
+      const x = node.x ?? 0;
+      const y = node.y ?? 0;
 
-      if (n.id === activePath) {
-        ctx.beginPath();
-        ctx.arc(x, y, r + 8 / globalScale, 0, 2 * Math.PI);
-        ctx.strokeStyle = "rgba(16, 185, 129, 0.5)";
-        ctx.lineWidth = 3 / globalScale;
-        ctx.stroke();
-      } else if (childrenSet?.has(n.id)) {
-        ctx.beginPath();
-        ctx.arc(x, y, r + 6 / globalScale, 0, 2 * Math.PI);
-        ctx.strokeStyle = "rgba(251, 191, 36, 0.45)";
-        ctx.lineWidth = 2.5 / globalScale;
-        ctx.stroke();
-      }
+      drawNode(ctx, x, y, r, isEmpty, isActive, isChild, isHovered, globalScale);
 
-      if (isHovered && n.id !== activePath && !childrenSet?.has(n.id)) {
-        ctx.beginPath();
-        ctx.arc(x, y, r + 5 / globalScale, 0, 2 * Math.PI);
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-        ctx.lineWidth = 2 / globalScale;
-        ctx.stroke();
-      }
-
-      const fontSize = Math.max(8, 11 / globalScale);
+      const fontSize = Math.max(7, 10 / globalScale);
       ctx.font = `${fontSize}px system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
@@ -201,7 +232,7 @@ export function GraphView({ activePath, onNodeClick }: Props) {
         ctx.fillRect(x - bw / 2, labelY - pad, bw, bh);
       }
 
-      ctx.fillStyle = "rgba(212, 212, 216, 0.95)";
+      ctx.fillStyle = isEmpty ? "rgba(161, 161, 170, 0.6)" : "rgba(212, 212, 216, 0.95)";
       ctx.textBaseline = "top";
       ctx.fillText(label, x, labelY);
     },

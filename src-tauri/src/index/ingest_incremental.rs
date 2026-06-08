@@ -15,11 +15,12 @@ pub fn apply_change(conn: &Connection, root: &Path, file: &Path) -> AppResult<()
     )
     .map_err(|e| AppError::internal(format!("delete document {rel}: {e}")))?;
     conn.execute(
-        "INSERT INTO documents (file_path, title, last_modified) VALUES (?1, ?2, ?3)",
+        "INSERT INTO documents (file_path, title, last_modified, content_size) VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![
             indexed.document.file_path,
             indexed.document.title,
-            indexed.document.last_modified
+            indexed.document.last_modified,
+            indexed.document.content_size
         ],
     )
     .map_err(|e| AppError::internal(format!("insert document {rel}: {e}")))?;
