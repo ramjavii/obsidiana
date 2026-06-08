@@ -134,7 +134,7 @@ export function GraphView({ activePath, onNodeClick }: Props) {
               : "#3f3f46"
           }
           linkWidth={(link) =>
-            isHighlightedLink(link as GraphLink, highlightSet) ? 8 : 3
+            isHighlightedLink(link as GraphLink, highlightSet) ? 4 : 1.5
           }
           linkCurvature={0.25}
           linkDirectionalParticles={2}

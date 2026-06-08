@@ -52,10 +52,27 @@ function useTreeMutation<TArgs, TResult>(
 }
 
 export function useCreateNoteMutation() {
-  return useTreeMutation<{ path: string; template: string | null }, NoteContent>(
-    ({ path, template }) => createNoteIpc(path, template),
-    ({ path }) => [parentOf(path)],
-  );
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      path,
+      template,
+    }: {
+      path: string;
+      template: string | null;
+    }): Promise<NoteContent> => {
+      try {
+        return await createNoteIpc(path, template);
+      } catch (err) {
+        if (isAppError(err)) reportAppError(err);
+        throw err;
+      }
+    },
+    onSuccess: (_, { path }) => {
+      void queryClient.invalidateQueries({ queryKey: treeChildrenKey(parentOf(path)) });
+      void queryClient.invalidateQueries({ queryKey: ["graph"] });
+    },
+  });
 }
 
 export function useDeleteNoteMutation() {
