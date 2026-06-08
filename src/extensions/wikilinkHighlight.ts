@@ -22,7 +22,7 @@ export type WikilinkClickActions = {
 
 const DATA_TARGET = "data-wikilink-target";
 const DATA_ALIAS = "data-wikilink-alias";
-const CURSOR_INSIDE_CLASS = "cm-wikilink-cursor-inside";
+const CURSOR_INSIDE_CLASS = "cm-formatting-cursor-inside";
 
 function buildAttributes(target: string, alias: string | null): Record<string, string> {
   const attrs: Record<string, string> = { [DATA_TARGET]: target };

@@ -18,6 +18,9 @@ export type InlineLineAttrSpec = {
 
 export type InlineDecorationSpec = InlineMarkSpec | InlineLineAttrSpec;
 
+const MARKER_CLASS = "cm-md-marker";
+const CURSOR_CLASS = "cm-formatting-cursor-inside";
+
 export function cssClassForKind(kind: RenderedKind): string {
   switch (kind.kind) {
     case "strong":
@@ -70,40 +73,161 @@ export function buildInlineDecorations(
   return out;
 }
 
-function buildDecorationSet(view: EditorView, note: RenderedNote | null): DecorationSet {
-  const specs = buildInlineDecorations(note);
-  const builder = new RangeSetBuilder<Decoration>();
-  const doc = view.state.doc;
-  for (const spec of specs) {
-    if (spec.kind === "mark") {
-      if (spec.from >= doc.length) continue;
-      const to = Math.min(spec.to, doc.length);
-      builder.add(spec.from, to, Decoration.mark({ class: spec.className }));
-    } else {
-      const startLine = Math.max(1, spec.startLine);
-      const endLine = Math.min(doc.lines, spec.endLine);
-      for (let line = startLine; line <= endLine; line += 1) {
-        const lineObj = doc.line(line);
-        builder.add(lineObj.from, lineObj.from, Decoration.line({ class: spec.className }));
+type MarkerSplit = {
+  openFrom: number;
+  openTo: number;
+  contentFrom: number;
+  contentTo: number;
+  closeFrom: number;
+  closeTo: number;
+};
+
+function splitMarkers(
+  docText: string,
+  from: number,
+  to: number,
+  kind: RenderedKind,
+): MarkerSplit | null {
+  if (to - from < 3) return null;
+  switch (kind.kind) {
+    case "strong": {
+      const open = docText.slice(from, from + 2);
+      const close = docText.slice(to - 2, to);
+      if (open === close && (open === "**" || open === "__")) {
+        return {
+          openFrom: from, openTo: from + 2,
+          contentFrom: from + 2, contentTo: to - 2,
+          closeFrom: to - 2, closeTo: to,
+        };
       }
+      return null;
     }
+    case "emphasis": {
+      const fc = docText[from];
+      const lc = docText[to - 1];
+      if ((fc === "*" || fc === "_") && fc === lc &&
+          docText.slice(from, from + 2) !== "**" &&
+          docText.slice(to - 2, to) !== "**" &&
+          docText.slice(from, from + 2) !== "__" &&
+          docText.slice(to - 2, to) !== "__") {
+        return {
+          openFrom: from, openTo: from + 1,
+          contentFrom: from + 1, contentTo: to - 1,
+          closeFrom: to - 1, closeTo: to,
+        };
+      }
+      return null;
+    }
+    case "strikethrough":
+      return {
+        openFrom: from, openTo: from + 2,
+        contentFrom: from + 2, contentTo: to - 2,
+        closeFrom: to - 2, closeTo: to,
+      };
+    case "codeInline":
+      return {
+        openFrom: from, openTo: from + 1,
+        contentFrom: from + 1, contentTo: to - 1,
+        closeFrom: to - 1, closeTo: to,
+      };
+    case "link": {
+      const closeParen = docText.indexOf("](", from);
+      if (closeParen === -1 || closeParen >= to) return null;
+      return {
+        openFrom: from, openTo: from + 1,
+        contentFrom: from + 1, contentTo: closeParen,
+        closeFrom: closeParen, closeTo: to,
+      };
+    }
+    case "wikilinkResolved":
+      return {
+        openFrom: from, openTo: from + 2,
+        contentFrom: from + 2, contentTo: to - 2,
+        closeFrom: to - 2, closeTo: to,
+      };
+    default:
+      return null;
   }
-  return builder.finish();
 }
 
 class InlineRenderPlugin {
-  decorations: DecorationSet;
+  decorations!: DecorationSet;
   private getRendered: () => RenderedNote | null;
+  private allRanges: Array<{ from: number; to: number }> = [];
 
   constructor(view: EditorView, getRendered: () => RenderedNote | null) {
     this.getRendered = getRendered;
-    this.decorations = buildDecorationSet(view, getRendered());
+    this.rebuild(view);
   }
 
   update(update: ViewUpdate) {
     if (update.docChanged || update.viewportChanged) {
-      this.decorations = buildDecorationSet(update.view, this.getRendered());
+      this.rebuild(update.view);
     }
+    if (update.selectionSet) {
+      this.updateCursorClass(update.view);
+    }
+  }
+
+  private rebuild(view: EditorView) {
+    const note = this.getRendered();
+    const docText = view.state.doc.toString();
+    const builder = new RangeSetBuilder<Decoration>();
+    const doc = view.state.doc;
+    const ranges: Array<{ from: number; to: number }> = [];
+
+    if (note) {
+      for (const span of note.inlineSpans) {
+        if (span.start >= doc.length) continue;
+        const to = Math.min(span.end, doc.length);
+        if (to - span.start < 1) continue;
+        ranges.push({ from: span.start, to });
+        const className = cssClassForKind(span.kind);
+        const split = splitMarkers(docText, span.start, to, span.kind);
+        if (split) {
+          if (split.openFrom < split.openTo) {
+            builder.add(split.openFrom, split.openTo, Decoration.mark({ class: MARKER_CLASS }));
+          }
+          builder.add(split.contentFrom, split.contentTo, Decoration.mark({ class: className }));
+          if (split.closeFrom < split.closeTo) {
+            builder.add(split.closeFrom, split.closeTo, Decoration.mark({ class: MARKER_CLASS }));
+          }
+        } else {
+          builder.add(span.start, to, Decoration.mark({ class: className }));
+        }
+      }
+
+      for (const block of note.blockSpans) {
+        const startLine = Math.max(1, block.startLine);
+        const endLine = Math.min(doc.lines, block.endLine);
+        for (let line = startLine; line <= endLine; line += 1) {
+          const lineObj = doc.line(line);
+          builder.add(lineObj.from, lineObj.from, Decoration.line({ class: cssClassForKind(block.kind) }));
+          ranges.push({ from: lineObj.from, to: lineObj.to });
+
+          if (block.kind.kind === "heading") {
+            const hashMatch = lineObj.text.match(/^(#{1,6})\s/);
+            if (hashMatch) {
+              const hashStart = lineObj.from;
+              const hashEnd = lineObj.from + hashMatch[0].length;
+              builder.add(hashStart, hashEnd, Decoration.mark({ class: MARKER_CLASS }));
+            }
+          }
+        }
+      }
+    }
+
+    this.allRanges = ranges;
+    this.decorations = builder.finish();
+    this.updateCursorClass(view);
+  }
+
+  private updateCursorClass(view: EditorView) {
+    const head = view.state.selection.main.head;
+    const inside = this.allRanges.some(
+      (r) => head >= r.from && head <= r.to,
+    );
+    view.dom.classList.toggle(CURSOR_CLASS, inside);
   }
 }
 
