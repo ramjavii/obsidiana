@@ -1,5 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 import { vi, afterEach, type Mock } from "vitest";
+
+if (typeof ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
 import { cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";

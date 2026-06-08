@@ -220,7 +220,7 @@ function Shell() {
             )}
           <aside
             data-testid="right-pane"
-            className="shrink-0 border-l border-zinc-800 overflow-hidden transition-[width] duration-200"
+            className="shrink-0 border-l border-zinc-800 overflow-hidden"
             style={{ width: rightOpen ? rightWidth : 0 }}
           >
             <div role="tablist" className="flex border-b border-zinc-800 text-xs">

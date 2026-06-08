@@ -6,25 +6,36 @@ import { GraphView } from "@/components/GraphView";
 import { invokeMock } from "./setup";
 import type { GraphData } from "@/types/index";
 
-vi.mock("react-force-graph-2d", () => ({
-  default: ({
-    graphData,
-    nodeCanvasObject,
-  }: {
-    graphData: GraphData;
-    nodeCanvasObjectMode?: string | (() => string);
-    nodeCanvasObject?: () => void;
-  }) => {
-    return (
-      <div
-        data-testid="graph-canvas"
-        data-nodes={JSON.stringify(graphData.nodes)}
-        data-links={JSON.stringify(graphData.links)}
-        data-has-nodecanvas={String(!!nodeCanvasObject)}
-      />
-    );
-  },
-}));
+vi.mock("react-force-graph-2d", async () => {
+  const React = await import("react");
+  const { forwardRef, useImperativeHandle } = React;
+
+  return {
+    default: forwardRef(function MockForceGraph(
+      props: {
+        graphData: GraphData;
+        nodeCanvasObjectMode?: string | (() => string);
+        nodeCanvasObject?: () => void;
+      },
+      ref: React.Ref<unknown>,
+    ) {
+      useImperativeHandle(ref, () => ({
+        d3ReheatSimulation: () => {},
+        zoomToFit: () => {},
+        centerAt: () => {},
+      }));
+
+      return (
+        <div
+          data-testid="graph-canvas"
+          data-nodes={JSON.stringify(props.graphData.nodes)}
+          data-links={JSON.stringify(props.graphData.links)}
+          data-has-nodecanvas={String(!!props.nodeCanvasObject)}
+        />
+      );
+    }),
+  };
+});
 
 function wrapperFactory() {
   const client = new QueryClient({
@@ -123,6 +134,35 @@ describe("GraphView", () => {
       );
       expect(nodes).toHaveLength(3);
     });
+  });
+
+  it("renders a fit-view button when graph data is present", async () => {
+    const data: GraphData = {
+      nodes: [
+        { id: "a.md", title: "A" },
+        { id: "b.md", title: "B" },
+      ],
+      links: [{ source: "a.md", target: "b.md" }],
+    };
+    invokeMock.mockResolvedValueOnce(data);
+
+    render(<GraphView />, { wrapper: wrapperFactory() });
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Fit view")).toBeInTheDocument();
+    });
+  });
+
+  it("does NOT render a fit-view button on empty state", async () => {
+    const data: GraphData = { nodes: [], links: [] };
+    invokeMock.mockResolvedValueOnce(data);
+
+    render(<GraphView />, { wrapper: wrapperFactory() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("graph-empty")).toBeInTheDocument();
+    });
+    expect(screen.queryByTitle("Fit view")).not.toBeInTheDocument();
   });
 
   describe("Canvas rendering", () => {
