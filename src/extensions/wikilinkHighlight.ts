@@ -1,12 +1,11 @@
 import {
   Decoration,
   EditorView,
-  MatchDecorator,
   ViewPlugin,
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { Extension } from "@codemirror/state";
+import { RangeSetBuilder, type Extension } from "@codemirror/state";
 import type { ResolvedLink } from "@/types/markdown";
 
 export const WIKILINK_PATTERN =
@@ -23,6 +22,7 @@ export type WikilinkClickActions = {
 
 const DATA_TARGET = "data-wikilink-target";
 const DATA_ALIAS = "data-wikilink-alias";
+const CURSOR_INSIDE_CLASS = "cm-wikilink-cursor-inside";
 
 function buildAttributes(target: string, alias: string | null): Record<string, string> {
   const attrs: Record<string, string> = { [DATA_TARGET]: target };
@@ -34,17 +34,43 @@ function stateClass(state: WikilinkState): string {
   return `cm-wikilink cm-wikilink-${state}`;
 }
 
-function makeDecorator(
-  getState: WikilinkClickActions["getState"],
-): MatchDecorator {
-  return new MatchDecorator({
-    regexp: WIKILINK_PATTERN,
-    decoration: (match) => {
+type WikilinkRange = { from: number; to: number };
+
+class WikilinkHighlightPlugin {
+  decorations!: DecorationSet;
+  private getState: WikilinkClickActions["getState"];
+  private wikilinkRanges: WikilinkRange[] = [];
+
+  constructor(view: EditorView, getState: WikilinkClickActions["getState"]) {
+    this.getState = getState;
+    this.rebuild(view);
+  }
+
+  update(update: ViewUpdate) {
+    if (update.docChanged || update.viewportChanged) {
+      this.rebuild(update.view);
+    }
+    if (update.selectionSet) {
+      this.updateCursorClass(update.view);
+    }
+  }
+
+  private rebuild(view: EditorView) {
+    const doc = view.state.doc.toString();
+    const builder = new RangeSetBuilder<Decoration>();
+    const ranges: WikilinkRange[] = [];
+
+    const re = new RegExp(WIKILINK_PATTERN.source, "g");
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(doc)) !== null) {
+      const from = match.index;
+      const to = from + match[0].length;
       const target = match[1] ?? "";
       const alias = match[2] ?? null;
-      const link = alias ? getState(target, alias) : getState(target, null);
+      const link = alias ? this.getState(target, alias) : this.getState(target, null);
       let state: WikilinkState = "unresolved";
       if (link) state = link.kind === "resolved" ? "resolved" : "broken";
+
       const attrs: Record<string, string> = buildAttributes(target, alias);
       if (state === "broken") {
         attrs.title = "Broken link — click to create this note";
@@ -52,27 +78,26 @@ function makeDecorator(
       if (state === "resolved") {
         attrs.title = "Click to navigate";
       }
-      return Decoration.mark({
-        class: stateClass(state),
-        attributes: attrs,
-      });
-    },
-  });
-}
 
-class WikilinkHighlightPlugin {
-  decorations: DecorationSet;
-  decorator: MatchDecorator;
+      ranges.push({ from, to });
 
-  constructor(view: EditorView, getState: WikilinkClickActions["getState"]) {
-    this.decorator = makeDecorator(getState);
-    this.decorations = this.decorator.createDeco(view);
+      const bracketClass = "cm-wikilink cm-wikilink-bracket";
+      builder.add(from, from + 2, Decoration.mark({ class: bracketClass, attributes: attrs }));
+      builder.add(to - 2, to, Decoration.mark({ class: bracketClass, attributes: attrs }));
+      builder.add(from + 2, to - 2, Decoration.mark({ class: stateClass(state), attributes: attrs }));
+    }
+
+    this.wikilinkRanges = ranges;
+    this.decorations = builder.finish();
+    this.updateCursorClass(view);
   }
 
-  update(update: ViewUpdate) {
-    if (update.docChanged || update.viewportChanged) {
-      this.decorations = this.decorator.updateDeco(update, this.decorations);
-    }
+  private updateCursorClass(view: EditorView) {
+    const head = view.state.selection.main.head;
+    const inside = this.wikilinkRanges.some(
+      (r) => head >= r.from && head <= r.to,
+    );
+    view.dom.classList.toggle(CURSOR_INSIDE_CLASS, inside);
   }
 }
 

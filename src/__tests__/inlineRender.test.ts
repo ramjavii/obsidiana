@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import type { RenderedNote, RenderedKind, RenderedSpan } from "@/types/markdown";
+import type { RenderedNote, RenderedKind } from "@/types/markdown";
 import {
   buildInlineDecorations,
   spanToMark,
@@ -103,22 +103,14 @@ describe("blockSpanToLineAttributes", () => {
   });
 });
 
-function wikilinkResolvedSpan(start: number, end: number): RenderedSpan {
-  return { start, end, kind: wikilinkResolved() };
-}
-
 describe("buildInlineDecorations", () => {
-  it("returns empty specs and ranges for null rendered note", () => {
-    const result = buildInlineDecorations(null);
-    expect(result.specs).toEqual([]);
-    expect(result.wikilinkRanges).toEqual([]);
+  it("returns an empty array for null rendered note", () => {
+    expect(buildInlineDecorations(null)).toEqual([]);
   });
 
-  it("returns empty specs and ranges for empty note", () => {
+  it("returns an empty array for empty note", () => {
     const note: RenderedNote = { html: "", inlineSpans: [], blockSpans: [] };
-    const result = buildInlineDecorations(note);
-    expect(result.specs).toEqual([]);
-    expect(result.wikilinkRanges).toEqual([]);
+    expect(buildInlineDecorations(note)).toEqual([]);
   });
 
   it("converts each inline span to a mark spec", () => {
@@ -130,7 +122,7 @@ describe("buildInlineDecorations", () => {
       ],
       blockSpans: [],
     };
-    const { specs } = buildInlineDecorations(note);
+    const specs = buildInlineDecorations(note);
     expect(specs).toEqual([
       { kind: "mark", from: 0, to: 2, className: "cm-md-strong" },
       { kind: "mark", from: 3, to: 4, className: "cm-md-em" },
@@ -143,7 +135,7 @@ describe("buildInlineDecorations", () => {
       inlineSpans: [],
       blockSpans: [{ startLine: 1, endLine: 1, kind: heading(1) }],
     };
-    const { specs } = buildInlineDecorations(note);
+    const specs = buildInlineDecorations(note);
     expect(specs).toEqual([
       {
         kind: "lineAttributes",
@@ -160,55 +152,10 @@ describe("buildInlineDecorations", () => {
       inlineSpans: [{ start: 4, end: 9, kind: strong() }],
       blockSpans: [{ startLine: 1, endLine: 1, kind: heading(1) }],
     };
-    const { specs } = buildInlineDecorations(note);
+    const specs = buildInlineDecorations(note);
     expect(specs).toHaveLength(2);
     expect(specs.some((s) => s.kind === "mark")).toBe(true);
     expect(specs.some((s) => s.kind === "lineAttributes")).toBe(true);
-  });
-
-  it("splits wikilink span into brackets and content when docText is provided", () => {
-    const docText = "hello [[target]] world";
-    const note: RenderedNote = {
-      html: "",
-      inlineSpans: [wikilinkResolvedSpan(6, 16)],
-      blockSpans: [],
-    };
-    const { specs, wikilinkRanges } = buildInlineDecorations(note, docText);
-    expect(specs).toEqual([
-      { kind: "mark", from: 6, to: 8, className: "cm-md-wikilink-bracket" },
-      { kind: "mark", from: 8, to: 14, className: "cm-md-wikilink-resolved" },
-      { kind: "mark", from: 14, to: 16, className: "cm-md-wikilink-bracket" },
-    ]);
-    expect(wikilinkRanges).toEqual([{ from: 6, to: 16 }]);
-  });
-
-  it("splits wikilink with alias into brackets and content", () => {
-    const docText = "hello [[target|Alias]] world";
-    const note: RenderedNote = {
-      html: "",
-      inlineSpans: [wikilinkResolvedSpan(6, 22)],
-      blockSpans: [],
-    };
-    const { specs, wikilinkRanges } = buildInlineDecorations(note, docText);
-    expect(specs).toEqual([
-      { kind: "mark", from: 6, to: 8, className: "cm-md-wikilink-bracket" },
-      { kind: "mark", from: 8, to: 20, className: "cm-md-wikilink-resolved" },
-      { kind: "mark", from: 20, to: 22, className: "cm-md-wikilink-bracket" },
-    ]);
-    expect(wikilinkRanges).toEqual([{ from: 6, to: 22 }]);
-  });
-
-  it("does not split wikilink when docText does not have brackets at expected positions", () => {
-    const docText = "hello target world";
-    const note: RenderedNote = {
-      html: "",
-      inlineSpans: [wikilinkResolvedSpan(6, 12)],
-      blockSpans: [],
-    };
-    const { specs } = buildInlineDecorations(note, docText);
-    expect(specs).toEqual([
-      { kind: "mark", from: 6, to: 12, className: "cm-md-wikilink-resolved" },
-    ]);
   });
 });
 
@@ -232,8 +179,6 @@ describe("inlineRender extension factory", () => {
     );
     const ext = inlineRender(getRendered);
     expect(ext).toBeDefined();
-    // Construction does not necessarily call getRendered immediately
-    // (CM6 lazy), but the closure is captured.
     expect(typeof getRendered).toBe("function");
   });
 });

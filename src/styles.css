@@ -89,11 +89,11 @@
   cursor: pointer;
 }
 
-.cm-md-wikilink-bracket {
+.cm-wikilink-bracket {
   opacity: 0;
 }
 
-.cm-wikilink-cursor-inside .cm-md-wikilink-bracket {
+.cm-wikilink-cursor-inside .cm-wikilink-bracket {
   opacity: 1;
 }
 

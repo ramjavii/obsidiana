@@ -18,14 +18,6 @@ export type InlineLineAttrSpec = {
 
 export type InlineDecorationSpec = InlineMarkSpec | InlineLineAttrSpec;
 
-export type WikilinkRange = {
-  from: number;
-  to: number;
-};
-
-const BRACKET_CLASS = "cm-md-wikilink-bracket";
-const CURSOR_INSIDE_CLASS = "cm-wikilink-cursor-inside";
-
 export function cssClassForKind(kind: RenderedKind): string {
   switch (kind.kind) {
     case "strong":
@@ -66,54 +58,20 @@ export function blockSpanToLineAttributes(
 
 export function buildInlineDecorations(
   note: RenderedNote | null,
-  docText?: string,
-): { specs: InlineDecorationSpec[]; wikilinkRanges: WikilinkRange[] } {
-  if (note === null) return { specs: [], wikilinkRanges: [] };
-  const specs: InlineDecorationSpec[] = [];
-  const wikilinkRanges: WikilinkRange[] = [];
+): InlineDecorationSpec[] {
+  if (note === null) return [];
+  const out: InlineDecorationSpec[] = [];
   for (const span of note.inlineSpans) {
-    if (span.kind.kind === "wikilinkResolved" && docText) {
-      const from = span.start;
-      const to = span.end;
-      if (
-        to - from >= 4 &&
-        docText.slice(from, from + 2) === "[[" &&
-        docText.slice(to - 2, to) === "]]"
-      ) {
-        wikilinkRanges.push({ from, to });
-        specs.push({
-          kind: "mark",
-          from,
-          to: from + 2,
-          className: BRACKET_CLASS,
-        });
-        specs.push({
-          kind: "mark",
-          from: from + 2,
-          to: to - 2,
-          className: "cm-md-wikilink-resolved",
-        });
-        specs.push({
-          kind: "mark",
-          from: to - 2,
-          to,
-          className: BRACKET_CLASS,
-        });
-        continue;
-      }
-    }
-    specs.push(spanToMark(span.start, span.end, span.kind));
+    out.push(spanToMark(span.start, span.end, span.kind));
   }
   for (const block of note.blockSpans) {
-    specs.push(blockSpanToLineAttributes(block.startLine, block.endLine, block.kind));
+    out.push(blockSpanToLineAttributes(block.startLine, block.endLine, block.kind));
   }
-  return { specs, wikilinkRanges };
+  return out;
 }
 
-function buildDecorationSetFromSpecs(
-  view: EditorView,
-  specs: InlineDecorationSpec[],
-): DecorationSet {
+function buildDecorationSet(view: EditorView, note: RenderedNote | null): DecorationSet {
+  const specs = buildInlineDecorations(note);
   const builder = new RangeSetBuilder<Decoration>();
   const doc = view.state.doc;
   for (const spec of specs) {
@@ -134,38 +92,18 @@ function buildDecorationSetFromSpecs(
 }
 
 class InlineRenderPlugin {
-  decorations!: DecorationSet;
+  decorations: DecorationSet;
   private getRendered: () => RenderedNote | null;
-  private wikilinkRanges: WikilinkRange[] = [];
 
   constructor(view: EditorView, getRendered: () => RenderedNote | null) {
     this.getRendered = getRendered;
-    this.rebuild(view, getRendered());
+    this.decorations = buildDecorationSet(view, getRendered());
   }
 
   update(update: ViewUpdate) {
     if (update.docChanged || update.viewportChanged) {
-      this.rebuild(update.view, this.getRendered());
+      this.decorations = buildDecorationSet(update.view, this.getRendered());
     }
-    if (update.selectionSet) {
-      this.updateCursorClass(update.view);
-    }
-  }
-
-  private rebuild(view: EditorView, note: RenderedNote | null) {
-    const docText = view.state.doc.toString();
-    const { specs, wikilinkRanges } = buildInlineDecorations(note, docText);
-    this.wikilinkRanges = wikilinkRanges;
-    this.decorations = buildDecorationSetFromSpecs(view, specs);
-    this.updateCursorClass(view);
-  }
-
-  private updateCursorClass(view: EditorView) {
-    const head = view.state.selection.main.head;
-    const inside = this.wikilinkRanges.some(
-      (r) => head >= r.from && head <= r.to,
-    );
-    view.dom.classList.toggle(CURSOR_INSIDE_CLASS, inside);
   }
 }
 
