@@ -159,6 +159,16 @@ describe("buildInlineDecorations", () => {
   });
 });
 
+describe("cursor class isolation", () => {
+  it("uses a different cursor class from wikilinkHighlight to avoid race", async () => {
+    const { CURSOR_CLASS } = await import("@/extensions/inlineRender");
+    const { CURSOR_INSIDE_CLASS } = await import("@/extensions/wikilinkHighlight");
+    expect(CURSOR_CLASS).not.toBe(CURSOR_INSIDE_CLASS);
+    expect(CURSOR_CLASS).toBe("cm-formatting-cursor-inside-inline");
+    expect(CURSOR_INSIDE_CLASS).toBe("cm-formatting-cursor-inside-wikilink");
+  });
+});
+
 describe("inlineRender extension factory", () => {
   it("returns a CodeMirror extension object", async () => {
     const { inlineRender } = await import("@/extensions/inlineRender");

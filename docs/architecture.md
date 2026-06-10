@@ -2474,6 +2474,35 @@ src/components/GraphView.tsx               (refactored drawNode, empty node as d
 src/types/index.ts                          (+1 line: isEmpty on GraphNode)
 ```
 
+## 2026-06-10 — Fix race condition in Live Preview marker visibility
+
+**Problem:** Both `inlineRender` and `wikilinkHighlight` ViewPlugins
+toggled `view.dom.classList` for the identical CSS class
+`cm-formatting-cursor-inside`. Since CM6 ViewPlugin execution order is
+non-deterministic, either plugin could overwrite the other's decision,
+causing inconsistent marker hiding ("works for some notes but not all").
+
+**Fix:** Assign each plugin its own independent class:
+- `inlineRender` → `cm-formatting-cursor-inside-inline`
+- `wikilinkHighlight` → `cm-formatting-cursor-inside-wikilink`
+
+CSS selectors updated from one shared parent to two independent ones,
+so each plugin controls only its own markers. No shared state, no race.
+
+**New test:** `cursor class isolation` in `inlineRender.test.ts` asserts
+the two class names differ and match the expected values.
+
+**Touched files:**
+```
+src/
+├── extensions/
+│   ├── inlineRender.ts        (exported CURSOR_CLASS, renamed to ...-inline)
+│   └── wikilinkHighlight.ts   (exported CURSOR_INSIDE_CLASS, renamed to ...-wikilink)
+├── styles.css                  (split .cm-formatting-cursor-inside into two selectors)
+└── __tests__/
+    └── inlineRender.test.ts    (+cursor class isolation test)
+```
+
 ## Open Questions / Backlog
 
 - ~~Pick the Markdown engine: Rust `markdown-rs` crate vs. JS `remark-parse` in a

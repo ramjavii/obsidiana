@@ -18,8 +18,8 @@ export type InlineLineAttrSpec = {
 
 export type InlineDecorationSpec = InlineMarkSpec | InlineLineAttrSpec;
 
-const MARKER_CLASS = "cm-md-marker";
-const CURSOR_CLASS = "cm-formatting-cursor-inside";
+export const MARKER_CLASS = "cm-md-marker";
+export const CURSOR_CLASS = "cm-formatting-cursor-inside-inline";
 
 export function cssClassForKind(kind: RenderedKind): string {
   switch (kind.kind) {

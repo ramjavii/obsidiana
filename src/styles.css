@@ -97,11 +97,11 @@
   opacity: 0;
 }
 
-.cm-formatting-cursor-inside .cm-wikilink-bracket {
+.cm-formatting-cursor-inside-inline .cm-md-marker {
   opacity: 1;
 }
 
-.cm-formatting-cursor-inside .cm-md-marker {
+.cm-formatting-cursor-inside-wikilink .cm-wikilink-bracket {
   opacity: 1;
 }
 
