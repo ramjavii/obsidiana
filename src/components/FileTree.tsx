@@ -115,15 +115,15 @@ export function FileTree({ selectedPath, onSelect }: FileTreeProps) {
       data-testid="file-tree"
       className="flex h-full flex-col bg-zinc-950"
     >
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-2 py-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
           Files
         </span>
         <button
           type="button"
           data-testid="new-note-root"
           onClick={handleNewAtRoot}
-          className="ml-auto rounded border border-zinc-700 px-1.5 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800"
+          className="ml-auto rounded-md border border-zinc-700 px-2 py-0.5 font-mono text-xs text-zinc-400 transition-colors duration-150 hover:border-zinc-600 hover:text-zinc-200"
         >
           + New
         </button>
@@ -167,7 +167,7 @@ export function FileTree({ selectedPath, onSelect }: FileTreeProps) {
         <div
           data-context-menu
           data-testid="context-menu"
-          className="fixed z-50 min-w-[160px] rounded border border-zinc-700 bg-zinc-900 py-1 text-sm shadow-lg"
+          className="fixed z-50 min-w-[160px] rounded-md border border-zinc-700 bg-surface-card py-1 text-sm shadow-md"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           {contextMenu.node.kind === "dir" && (
@@ -175,7 +175,7 @@ export function FileTree({ selectedPath, onSelect }: FileTreeProps) {
               type="button"
               data-testid="context-new"
               onClick={() => handleContextAction("new", contextMenu.node)}
-              className="block w-full px-3 py-1.5 text-left hover:bg-zinc-800"
+              className="block w-full px-3 py-1.5 text-left text-zinc-300 transition-colors duration-150 hover:bg-zinc-800 hover:text-zinc-100"
             >
               New note here
             </button>
@@ -184,7 +184,7 @@ export function FileTree({ selectedPath, onSelect }: FileTreeProps) {
             type="button"
             data-testid="context-rename"
             onClick={() => handleContextAction("rename", contextMenu.node)}
-            className="block w-full px-3 py-1.5 text-left hover:bg-zinc-800"
+            className="block w-full px-3 py-1.5 text-left text-zinc-300 transition-colors duration-150 hover:bg-zinc-800 hover:text-zinc-100"
           >
             Rename
           </button>
@@ -192,7 +192,7 @@ export function FileTree({ selectedPath, onSelect }: FileTreeProps) {
             type="button"
             data-testid="context-delete"
             onClick={() => handleContextAction("delete", contextMenu.node)}
-            className="block w-full px-3 py-1.5 text-left text-rose-300 hover:bg-rose-900/40"
+            className="block w-full px-3 py-1.5 text-left text-rose-300 transition-colors duration-150 hover:bg-rose-900/40"
           >
             Delete
           </button>
@@ -233,8 +233,10 @@ function FileTreeNode({
         data-kind={node.kind}
         data-selected={isSelected ? "true" : "false"}
         className={[
-          "flex cursor-pointer items-center gap-1 py-0.5 pr-2 hover:bg-zinc-900",
-          isSelected ? "bg-zinc-800 text-zinc-100" : "text-zinc-300",
+          "group relative flex cursor-pointer items-center gap-1.5 py-0.5 pr-2 transition-colors duration-150",
+          isSelected
+            ? "bg-zinc-800 text-zinc-100"
+            : "text-zinc-300 hover:bg-zinc-900",
         ].join(" ")}
         style={{ paddingLeft: `${level * 14 + 6}px` }}
         onClick={() => {
@@ -243,10 +245,27 @@ function FileTreeNode({
         }}
         onContextMenu={(e) => onContextMenu(e, node)}
       >
-        <span className="inline-block w-3 text-center text-[10px] text-zinc-600">
-          {isDir ? (isOpen ? "▾" : "▸") : ""}
+        {isSelected && (
+          <div className="absolute left-0 top-0 h-full w-0.5 bg-brand" />
+        )}
+        <span className="inline-flex w-4 items-center justify-center text-zinc-500">
+          {isDir ? (
+            <svg
+              className={`h-3 w-3 transition-transform duration-150 ${isOpen ? "rotate-90" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          ) : (
+            <svg className="h-3.5 w-3.5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+            </svg>
+          )}
         </span>
-        <span className="truncate">{node.name}</span>
+        <span className="truncate text-sm">{node.name}</span>
       </div>
       {isOpen && (
         <div data-testid={`children-${node.path}`}>
