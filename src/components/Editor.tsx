@@ -261,7 +261,7 @@ export function Editor({
         EditorView.theme({
           "&": { backgroundColor: "transparent", fontSize: "15px" },
           ".cm-content": {
-            fontFamily: `system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`,
+            fontFamily: "var(--font-sans)",
             fontSize: "15px",
             lineHeight: "1.65",
             padding: "1.5rem 2rem",
