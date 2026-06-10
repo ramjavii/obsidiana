@@ -345,14 +345,14 @@ export function Editor({
     saved: "Saved",
     error: "Error",
   };
-  const statusClass =
+  const statusColor =
     status === "saving"
-      ? "text-amber-300"
+      ? "bg-amber-500/10 text-amber-300"
       : status === "saved"
-        ? "text-emerald-400"
+        ? "bg-brand/10 text-brand"
         : status === "error"
-          ? "text-rose-400"
-          : "text-zinc-500";
+          ? "bg-rose-500/10 text-rose-400"
+          : "bg-zinc-500/10 text-zinc-500";
 
   return (
     <div
@@ -361,18 +361,20 @@ export function Editor({
       data-editor-mode="livePreview"
       className="flex h-full flex-col bg-zinc-950"
     >
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-2">
-        <span className="text-sm font-medium text-zinc-200">{path}</span>
-        <span data-testid="editor-status" className={`text-xs ${statusClass}`}>
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-1.5">
+        <span className="font-mono text-xs text-zinc-400 truncate">{path}</span>
+        <span data-testid="editor-status" className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-medium ${statusColor}`}>
           {statusLabel[status]}
         </span>
         <button
           type="button"
           data-testid="editor-close"
           onClick={handleClose}
-          className="ml-auto rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800"
+          className="ml-auto flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-500 transition-colors duration-150 hover:bg-zinc-800 hover:text-zinc-200"
         >
-          ×
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
       </div>
       {needsReload ? (

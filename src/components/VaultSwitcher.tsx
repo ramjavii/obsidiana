@@ -31,10 +31,12 @@ export function VaultSwitcher({ vault }: Props) {
         type="button"
         data-testid="vault-switcher-toggle"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 rounded border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 hover:bg-zinc-700"
+        className="flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 transition-colors duration-150 hover:bg-zinc-700 hover:text-zinc-50"
       >
         <span className="font-medium">{vault.name}</span>
-        <span className="text-xs text-zinc-500">▾</span>
+        <svg className="h-3 w-3 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
       </button>
       {open && (
         <div

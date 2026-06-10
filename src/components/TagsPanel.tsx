@@ -12,13 +12,13 @@ export function TagsPanel({ path }: Props) {
     <section
       data-testid="tags-panel"
       data-tags-path={path}
-      className="flex h-full flex-col gap-2 overflow-auto p-3"
+      className="flex h-full flex-col gap-2 overflow-auto p-4"
     >
       <header className="flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
           Tags
         </h2>
-        <span data-testid="tags-count" className="text-xs text-zinc-500">
+        <span data-testid="tags-count" className="text-[11px] font-mono text-zinc-600">
           {query.isPending ? "…" : `${tags.length}`}
         </span>
       </header>

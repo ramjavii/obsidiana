@@ -15,13 +15,13 @@ export function BacklinksPanel({ path, onNavigate }: Props) {
     <section
       data-testid="backlinks-panel"
       data-backlinks-path={path}
-      className="flex h-full flex-col gap-2 overflow-auto p-3"
+      className="flex h-full flex-col gap-2 overflow-auto p-4"
     >
       <header className="flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
           Backlinks
         </h2>
-        <span data-testid="backlinks-count" className="text-xs text-zinc-500">
+        <span data-testid="backlinks-count" className="text-[11px] font-mono text-zinc-600">
           {query.isPending ? "…" : `${backlinks.length}`}
         </span>
       </header>

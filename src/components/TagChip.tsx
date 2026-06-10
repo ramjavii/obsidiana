@@ -7,7 +7,7 @@ type Props = {
 
 export function TagChip({ tag, onClick }: Props) {
   const className =
-    "tag-chip inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-700 transition-colors";
+    "tag-chip inline-flex items-center rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors duration-150";
   if (onClick) {
     return (
       <button

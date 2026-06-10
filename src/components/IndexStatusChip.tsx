@@ -8,15 +8,15 @@ import { appErrorMessage } from "@/errors";
 function classFor(state: IndexStatus["state"]): string {
   switch (state) {
     case "missing":
-      return "bg-zinc-800 text-zinc-400";
+      return "bg-zinc-800/60 text-zinc-500";
     case "indexing":
-      return "bg-zinc-800 text-zinc-200 animate-pulse";
+      return "bg-brand/10 text-brand animate-pulse";
     case "ready":
-      return "bg-emerald-800/30";
+      return "bg-emerald-500/10 text-emerald-400";
     case "broken":
-      return "bg-amber-900 text-amber-100 cursor-pointer hover:bg-amber-800";
+      return "bg-amber-500/10 text-amber-300";
     case "failed":
-      return "bg-red-900 text-red-100 cursor-pointer hover:bg-red-800";
+      return "bg-rose-500/10 text-rose-400";
   }
 }
 
@@ -63,7 +63,7 @@ export function IndexStatusChip() {
       <span
         data-testid="index-status-chip"
         data-index-state="loading"
-        className="rounded px-2 py-0.5 text-xs bg-zinc-800 text-zinc-500"
+        className="rounded px-2 py-0.5 text-xs bg-zinc-800/60 text-zinc-500"
       >
         Index…
       </span>
@@ -75,7 +75,7 @@ export function IndexStatusChip() {
       <span
         data-testid="index-status-chip"
         data-index-state="error"
-        className="rounded px-2 py-0.5 text-xs bg-zinc-800 text-rose-300"
+        className="rounded px-2 py-0.5 text-xs bg-rose-500/10 text-rose-400"
         title={error ? appErrorMessage(error) : "index status unavailable"}
       >
         Index unknown
