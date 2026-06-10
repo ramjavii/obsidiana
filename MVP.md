@@ -71,6 +71,18 @@ Sync & publishing:
 - [ ] Git sync UI: pull, commit, push with conflict detection
 - [ ] Quartz publishing pipeline (build + deploy to GitHub Pages)
 
+Visual redesign (Stage 5 cross-cutting):
+
+- [x] Design system foundation — CSS custom properties, Fira Code + Fira Sans fonts, brand blue (#2563EB) palette, Tailwind config tokens
+- [ ] App shell & layout polish — header, sidebar, right-pane transitions
+- [ ] Empty state redesign — branded first-launch screen
+- [ ] FileTree visual refresh
+- [ ] Editor chrome polish
+- [ ] Right pane polish — tags, backlinks, tab bar
+- [ ] Graph view overhaul — physics, colors, labels, controls
+- [ ] VaultSwitcher & IndexStatusChip polish
+- [ ] Toast host redesign
+
 Explicitly out of MVP (deferred to a later stage):
 
 - Full-text search (only link/tag metadata is indexed in MVP)

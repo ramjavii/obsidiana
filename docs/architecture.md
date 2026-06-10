@@ -2474,6 +2474,45 @@ src/components/GraphView.tsx               (refactored drawNode, empty node as d
 src/types/index.ts                          (+1 line: isEmpty on GraphNode)
 ```
 
+## 2026-06-10 — Design System Foundation
+
+Added the first layer of a proper design system:
+- **CSS custom properties** (`:root` tokens) for colors, fonts, radii, shadows, transitions
+- **Fira Code + Fira Sans** fonts loaded from Google Fonts (preconnect for perf)
+- **Tailwind config** extended with `fontFamily` (sans/mono), `brand` blue palette (#2563EB), `surface` colors
+- **CM decoration classes** migrated from hardcoded hex to `var(--color-*)` tokens
+- **Editor theme** font-family updated to `var(--font-sans)`
+
+**Design tokens defined:**
+```
+--color-bg-base        #09090b
+--color-bg-surface     #18181b
+--color-bg-elevated    #27272a
+--color-border         #27272a
+--color-border-hover   #3f3f46
+--color-text-primary   #f4f4f5
+--color-text-secondary #a1a1aa
+--color-text-muted     #71717a
+--color-brand          #2563eb
+--color-brand-hover    #1d4ed8
+--color-brand-light    rgba(37, 99, 235, 0.15)
+--color-success        #22c55e
+--color-warning        #f59e0b
+--color-error          #f43f5e
+--font-sans            Fira Sans, system-ui
+--font-mono            Fira Code, JetBrains Mono, ui-monospace
+```
+
+**Touched files:**
+```
+index.html                                       (+Google Fonts preconnect + link)
+tailwind.config.ts                               (+fontFamily, colors.brand, colors.surface)
+src/
+├── styles.css                                    (+:root vars, migrated CM classes to var())
+└── components/
+    └── Editor.tsx                                (fontFamily → var(--font-sans))
+```
+
 ## 2026-06-10 — Fix race condition in Live Preview marker visibility
 
 **Problem:** Both `inlineRender` and `wikilinkHighlight` ViewPlugins
