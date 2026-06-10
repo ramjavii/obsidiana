@@ -192,3 +192,180 @@ describe("inlineRender extension factory", () => {
     expect(typeof getRendered).toBe("function");
   });
 });
+
+describe("findMarkers", () => {
+  async function load() {
+    const mod = await import("@/extensions/inlineRender");
+    return mod.findMarkers;
+  }
+
+  it("returns empty array for empty string", async () => {
+    const findMarkers = await load();
+    expect(findMarkers("")).toEqual([]);
+  });
+
+  it("returns empty array for plain text with no formatting", async () => {
+    const findMarkers = await load();
+    expect(findMarkers("hello world")).toEqual([]);
+  });
+
+  it("finds **bold** markers", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("**bold**");
+    expect(result).toEqual([
+      { from: 0, to: 2 },
+      { from: 6, to: 8 },
+    ]);
+  });
+
+  it("finds __bold__ markers", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("__bold__");
+    expect(result).toEqual([
+      { from: 0, to: 2 },
+      { from: 6, to: 8 },
+    ]);
+  });
+
+  it("finds *italic* markers", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("*italic*");
+    expect(result).toEqual([
+      { from: 0, to: 1 },
+      { from: 7, to: 8 },
+    ]);
+  });
+
+  it("finds _italic_ markers", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("_italic_");
+    expect(result).toEqual([
+      { from: 0, to: 1 },
+      { from: 7, to: 8 },
+    ]);
+  });
+
+  it("finds ~~strikethrough~~ markers", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("~~strikethrough~~");
+    expect(result).toEqual([
+      { from: 0, to: 2 },
+      { from: 15, to: 17 },
+    ]);
+  });
+
+  it("finds `code` markers", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("`code`");
+    expect(result).toEqual([
+      { from: 0, to: 1 },
+      { from: 5, to: 6 },
+    ]);
+  });
+
+  it("finds # heading markers", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("# Heading");
+    expect(result).toEqual([{ from: 0, to: 2 }]);
+  });
+
+  it("finds ## heading markers including space", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("## Heading");
+    expect(result).toEqual([{ from: 0, to: 3 }]);
+  });
+
+  it("finds multiple heading markers on different lines", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("# A\n\n## B\n\n### C");
+    expect(result).toEqual([
+      { from: 0, to: 2 },
+      { from: 5, to: 8 },
+      { from: 11, to: 15 },
+    ]);
+  });
+
+  it("finds [text](url) link markers", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("[text](https://example.com)");
+    expect(result).toEqual([
+      { from: 0, to: 1 },
+      { from: 5, to: 27 },
+    ]);
+  });
+
+  it("finds bold with non-ASCII content", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("**café**");
+    expect(result).toEqual([
+      { from: 0, to: 2 },
+      { from: 6, to: 8 },
+    ]);
+  });
+
+  it("finds bold with Spanish characters", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("**árbol**");
+    expect(result).toEqual([
+      { from: 0, to: 2 },
+      { from: 7, to: 9 },
+    ]);
+  });
+
+  it("finds multiple formatting markers in one line", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("**bold** and *italic*");
+    expect(result).toEqual([
+      { from: 0, to: 2 },
+      { from: 6, to: 8 },
+      { from: 13, to: 14 },
+      { from: 20, to: 21 },
+    ]);
+  });
+
+  it("finds markers across multiple lines", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("**bold**\n*italic*\n`code`");
+    expect(result).toEqual([
+      { from: 0, to: 2 },
+      { from: 6, to: 8 },
+      { from: 9, to: 10 },
+      { from: 16, to: 17 },
+      { from: 18, to: 19 },
+      { from: 23, to: 24 },
+    ]);
+  });
+
+  it("does not find * around arithmetic as italic markers", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("3 * 4 = 12");
+    expect(result).toEqual([]);
+  });
+
+  it("does not match * without closing *", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("just a single * here");
+    expect(result).toEqual([]);
+  });
+
+  it("does not match adjacent bold+italic as separate italic (star at boundary)", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("**bold***italic*");
+    // The * at position 8 is preceded by * (position 7 = closing ** from bold),
+    // so (?<!\*) prevents matching *italic* as a separate italic span.
+    // Only **bold** is matched: markers [0,2] and [6,8].
+    expect(result).toEqual([
+      { from: 0, to: 2 },
+      { from: 6, to: 8 },
+    ]);
+  });
+
+  it("handles markdown link with bold content inside", async () => {
+    const findMarkers = await load();
+    const result = findMarkers("[**text**](url)");
+    expect(result).toContainEqual({ from: 0, to: 1 });
+    expect(result).toContainEqual({ from: 1, to: 3 });
+    expect(result).toContainEqual({ from: 7, to: 9 });
+    expect(result).toContainEqual({ from: 9, to: 15 });
+  });
+});
