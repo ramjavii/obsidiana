@@ -73,81 +73,117 @@ export function buildInlineDecorations(
   return out;
 }
 
-type MarkerSplit = {
-  openFrom: number;
-  openTo: number;
-  contentFrom: number;
-  contentTo: number;
-  closeFrom: number;
-  closeTo: number;
-};
+/** Find all formatting-marker positions in `doc` using frontend regexes
+ *  (always correct UTF-16 code unit indices). */
+export function findMarkers(doc: string): Array<{ from: number; to: number }> {
+  const markers: Array<{ from: number; to: number }> = [];
 
-function splitMarkers(
-  docText: string,
-  from: number,
-  to: number,
-  kind: RenderedKind,
-): MarkerSplit | null {
-  if (to - from < 3) return null;
-  switch (kind.kind) {
-    case "strong": {
-      const open = docText.slice(from, from + 2);
-      const close = docText.slice(to - 2, to);
-      if (open === close && (open === "**" || open === "__")) {
-        return {
-          openFrom: from, openTo: from + 2,
-          contentFrom: from + 2, contentTo: to - 2,
-          closeFrom: to - 2, closeTo: to,
-        };
-      }
-      return null;
-    }
-    case "emphasis": {
-      const fc = docText[from];
-      const lc = docText[to - 1];
-      if ((fc === "*" || fc === "_") && fc === lc &&
-          docText.slice(from, from + 2) !== "**" &&
-          docText.slice(to - 2, to) !== "**" &&
-          docText.slice(from, from + 2) !== "__" &&
-          docText.slice(to - 2, to) !== "__") {
-        return {
-          openFrom: from, openTo: from + 1,
-          contentFrom: from + 1, contentTo: to - 1,
-          closeFrom: to - 1, closeTo: to,
-        };
-      }
-      return null;
-    }
-    case "strikethrough":
-      return {
-        openFrom: from, openTo: from + 2,
-        contentFrom: from + 2, contentTo: to - 2,
-        closeFrom: to - 2, closeTo: to,
-      };
-    case "codeInline":
-      return {
-        openFrom: from, openTo: from + 1,
-        contentFrom: from + 1, contentTo: to - 1,
-        closeFrom: to - 1, closeTo: to,
-      };
-    case "link": {
-      const closeParen = docText.indexOf("](", from);
-      if (closeParen === -1 || closeParen >= to) return null;
-      return {
-        openFrom: from, openTo: from + 1,
-        contentFrom: from + 1, contentTo: closeParen,
-        closeFrom: closeParen, closeTo: to,
-      };
-    }
-    case "wikilinkResolved":
-      return {
-        openFrom: from, openTo: from + 2,
-        contentFrom: from + 2, contentTo: to - 2,
-        closeFrom: to - 2, closeTo: to,
-      };
-    default:
-      return null;
+  // Bold: **text**
+  let re = /\*\*(.+?)\*\*/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(doc)) !== null) {
+    markers.push({ from: m.index, to: m.index + 2 });
+    markers.push({ from: m.index + m[0].length - 2, to: m.index + m[0].length });
   }
+
+  // Italic: *text* where bare *
+  re = /(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)/g;
+  while ((m = re.exec(doc)) !== null) {
+    markers.push({ from: m.index, to: m.index + 1 });
+    markers.push({ from: m.index + m[0].length - 1, to: m.index + m[0].length });
+  }
+
+  // Bold: __text__
+  re = /__(.+?)__/g;
+  while ((m = re.exec(doc)) !== null) {
+    markers.push({ from: m.index, to: m.index + 2 });
+    markers.push({ from: m.index + m[0].length - 2, to: m.index + m[0].length });
+  }
+
+  // Italic: _text_ where not __
+  re = /(?<!_)_(?!_)([^_]+?)(?<!_)_(?!_)/g;
+  while ((m = re.exec(doc)) !== null) {
+    markers.push({ from: m.index, to: m.index + 1 });
+    markers.push({ from: m.index + m[0].length - 1, to: m.index + m[0].length });
+  }
+
+  // Strikethrough: ~~text~~
+  re = /~~(.+?)~~/g;
+  while ((m = re.exec(doc)) !== null) {
+    markers.push({ from: m.index, to: m.index + 2 });
+    markers.push({ from: m.index + m[0].length - 2, to: m.index + m[0].length });
+  }
+
+  // Inline code: `text`
+  re = /`([^`]+?)`/g;
+  while ((m = re.exec(doc)) !== null) {
+    markers.push({ from: m.index, to: m.index + 1 });
+    markers.push({ from: m.index + m[0].length - 1, to: m.index + m[0].length });
+  }
+
+  // Heading: # at start of line
+  re = /^(#{1,6})\s/gm;
+  while ((m = re.exec(doc)) !== null) {
+    markers.push({ from: m.index, to: m.index + m[0].length });
+  }
+
+  // Markdown link: [text](url)
+  re = /\[([^\]]+)\]\(([^)]*)\)/g;
+  while ((m = re.exec(doc)) !== null) {
+    markers.push({ from: m.index, to: m.index + 1 });
+    const closeBracket = m.index + m[0].indexOf("](");
+    markers.push({ from: closeBracket, to: m.index + m[0].length });
+  }
+
+  return markers;
+}
+
+/** Build a sorted array of disjoint ranges where marker hiding is
+ *  suppressed (inside code blocks or inline code). */
+function buildCodeRanges(
+  note: RenderedNote | null,
+  doc: { lines: number; line: (n: number) => { from: number; to: number } },
+): Array<{ from: number; to: number }> {
+  if (note === null) return [];
+  const ranges: Array<{ from: number; to: number }> = [];
+
+  for (const span of note.inlineSpans) {
+    if (span.kind.kind === "codeInline") {
+      ranges.push({ from: span.start, to: span.end });
+    }
+  }
+  for (const block of note.blockSpans) {
+    if (block.kind.kind !== "codeBlock") continue;
+    const startLine = Math.max(1, block.startLine);
+    const endLine = Math.min(doc.lines, block.endLine);
+    for (let line = startLine; line <= endLine; line += 1) {
+      const lineObj = doc.line(line);
+      ranges.push({ from: lineObj.from, to: lineObj.to });
+    }
+  }
+
+  ranges.sort((a, b) => a.from - b.from);
+  return ranges;
+}
+
+function isInsideRanges(
+  pos: number,
+  ranges: Array<{ from: number; to: number }>,
+): boolean {
+  let lo = 0;
+  let hi = ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const r = ranges[mid]!;
+    if (pos < r.from) {
+      hi = mid;
+    } else if (pos >= r.to) {
+      lo = mid + 1;
+    } else {
+      return true;
+    }
+  }
+  return false;
 }
 
 class InlineRenderPlugin {
@@ -176,25 +212,23 @@ class InlineRenderPlugin {
     const doc = view.state.doc;
     const ranges: Array<{ from: number; to: number }> = [];
 
+    const codeRanges = buildCodeRanges(note, doc);
+
+    const markers = findMarkers(docText);
+    for (const m of markers) {
+      if (isInsideRanges(m.from, codeRanges)) continue;
+      builder.add(m.from, m.to, Decoration.mark({ class: MARKER_CLASS }));
+    }
+
     if (note) {
       for (const span of note.inlineSpans) {
+        if (span.kind.kind === "wikilinkResolved") continue;
         if (span.start >= doc.length) continue;
         const to = Math.min(span.end, doc.length);
         if (to - span.start < 1) continue;
         ranges.push({ from: span.start, to });
         const className = cssClassForKind(span.kind);
-        const split = splitMarkers(docText, span.start, to, span.kind);
-        if (split) {
-          if (split.openFrom < split.openTo) {
-            builder.add(split.openFrom, split.openTo, Decoration.mark({ class: MARKER_CLASS }));
-          }
-          builder.add(split.contentFrom, split.contentTo, Decoration.mark({ class: className }));
-          if (split.closeFrom < split.closeTo) {
-            builder.add(split.closeFrom, split.closeTo, Decoration.mark({ class: MARKER_CLASS }));
-          }
-        } else {
-          builder.add(span.start, to, Decoration.mark({ class: className }));
-        }
+        builder.add(span.start, to, Decoration.mark({ class: className }));
       }
 
       for (const block of note.blockSpans) {
@@ -204,15 +238,6 @@ class InlineRenderPlugin {
           const lineObj = doc.line(line);
           builder.add(lineObj.from, lineObj.from, Decoration.line({ class: cssClassForKind(block.kind) }));
           ranges.push({ from: lineObj.from, to: lineObj.to });
-
-          if (block.kind.kind === "heading") {
-            const hashMatch = lineObj.text.match(/^(#{1,6})\s/);
-            if (hashMatch) {
-              const hashStart = lineObj.from;
-              const hashEnd = lineObj.from + hashMatch[0].length;
-              builder.add(hashStart, hashEnd, Decoration.mark({ class: MARKER_CLASS }));
-            }
-          }
         }
       }
     }

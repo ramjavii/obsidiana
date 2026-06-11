@@ -29,28 +29,6 @@ export function useTreeChildren(
   });
 }
 
-function useTreeMutation<TArgs, TResult>(
-  fn: (args: TArgs) => Promise<TResult>,
-  invalidate: (args: TArgs, result: TResult) => Array<string | null>,
-) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (args: TArgs) => {
-      try {
-        return await fn(args);
-      } catch (err) {
-        if (isAppError(err)) reportAppError(err);
-        throw err;
-      }
-    },
-    onSuccess: (result, args) => {
-      for (const key of invalidate(args, result)) {
-        void queryClient.invalidateQueries({ queryKey: treeChildrenKey(key) });
-      }
-    },
-  });
-}
-
 export function useCreateNoteMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -76,17 +54,41 @@ export function useCreateNoteMutation() {
 }
 
 export function useDeleteNoteMutation() {
-  return useTreeMutation<{ path: string }, void>(
-    ({ path }) => deleteNoteIpc(path),
-    ({ path }) => [parentOf(path)],
-  );
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ path }: { path: string }) => {
+      try {
+        return await deleteNoteIpc(path);
+      } catch (err) {
+        if (isAppError(err)) reportAppError(err);
+        throw err;
+      }
+    },
+    onSuccess: (_, { path }) => {
+      void queryClient.invalidateQueries({ queryKey: treeChildrenKey(parentOf(path)) });
+      void queryClient.invalidateQueries({ queryKey: ["graph"] });
+    },
+  });
 }
 
 export function useRenameNoteMutation() {
-  return useTreeMutation<{ from: string; to: string }, RenameReport>(
-    ({ from, to }) => renameNoteIpc(from, to),
-    ({ from, to }) => Array.from(new Set([parentOf(from), parentOf(to)])),
-  );
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ from, to }: { from: string; to: string }): Promise<RenameReport> => {
+      try {
+        return await renameNoteIpc(from, to);
+      } catch (err) {
+        if (isAppError(err)) reportAppError(err);
+        throw err;
+      }
+    },
+    onSuccess: (_, { from, to }) => {
+      for (const key of Array.from(new Set([parentOf(from), parentOf(to)]))) {
+        void queryClient.invalidateQueries({ queryKey: treeChildrenKey(key) });
+      }
+      void queryClient.invalidateQueries({ queryKey: ["graph"] });
+    },
+  });
 }
 
 export function withNoteExtension(name: string): string {

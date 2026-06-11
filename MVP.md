@@ -74,7 +74,7 @@ Sync & publishing:
 Visual redesign (Stage 5 cross-cutting):
 
 - [x] Design system foundation — CSS custom properties, Fira Code + Fira Sans fonts, brand blue (#2563EB) palette, Tailwind config tokens
-- [ ] App shell & layout polish — header, sidebar, right-pane transitions
+- [x] App shell & layout polish — header, sidebar, right-pane transitions
 - [ ] Empty state redesign — branded first-launch screen
 - [ ] FileTree visual refresh
 - [ ] Editor chrome polish

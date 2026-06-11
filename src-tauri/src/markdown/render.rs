@@ -4,6 +4,14 @@ use crate::markdown::wikilink::wikilink_ranges;
 use markdown::mdast::Node;
 use std::collections::HashSet;
 
+/// Convert a byte offset in `s` to a UTF-16 code unit offset suitable
+/// for JavaScript string indexing. For ASCII text the two are equal;
+/// for multi-byte UTF-8 sequences (e.g. `é`, `ñ`, emoji) the UTF-16
+/// offset is smaller.
+fn byte_to_utf16_offset(s: &str, byte_offset: usize) -> usize {
+    s[..byte_offset].chars().map(|c| c.len_utf16()).sum()
+}
+
 /// Render `content` to a sanitized HTML fragment plus a source map
 /// of inline and block spans. `resolve_wikilink` is invoked once per
 /// unique wikilink target+alias in the source; it should return the
@@ -46,25 +54,25 @@ fn walk(
 ) {
     match node {
         Node::Strong(s) => {
-            emit_inline(s.position.as_ref(), RenderedKind::Strong, inline_spans);
+            emit_inline(s.position.as_ref(), RenderedKind::Strong, _content, inline_spans);
             for child in &s.children {
                 walk(child, _content, inline_spans, block_spans);
             }
         }
         Node::Emphasis(e) => {
-            emit_inline(e.position.as_ref(), RenderedKind::Emphasis, inline_spans);
+            emit_inline(e.position.as_ref(), RenderedKind::Emphasis, _content, inline_spans);
             for child in &e.children {
                 walk(child, _content, inline_spans, block_spans);
             }
         }
         Node::Delete(d) => {
-            emit_inline(d.position.as_ref(), RenderedKind::Strikethrough, inline_spans);
+            emit_inline(d.position.as_ref(), RenderedKind::Strikethrough, _content, inline_spans);
             for child in &d.children {
                 walk(child, _content, inline_spans, block_spans);
             }
         }
         Node::InlineCode(c) => {
-            emit_inline(c.position.as_ref(), RenderedKind::CodeInline, inline_spans);
+            emit_inline(c.position.as_ref(), RenderedKind::CodeInline, _content, inline_spans);
         }
         Node::Code(c) => {
             emit_block(
@@ -84,7 +92,7 @@ fn walk(
             }
         }
         Node::Link(l) => {
-            emit_inline(l.position.as_ref(), RenderedKind::Link, inline_spans);
+            emit_inline(l.position.as_ref(), RenderedKind::Link, _content, inline_spans);
             for child in &l.children {
                 walk(child, _content, inline_spans, block_spans);
             }
@@ -117,12 +125,13 @@ fn children_of(node: &Node) -> &[Node] {
 fn emit_inline(
     pos: Option<&markdown::unist::Position>,
     kind: RenderedKind,
+    content: &str,
     out: &mut Vec<RenderedSpan>,
 ) {
     let Some(p) = pos else { return };
     out.push(RenderedSpan {
-        start: p.start.offset,
-        end: p.end.offset,
+        start: byte_to_utf16_offset(content, p.start.offset),
+        end: byte_to_utf16_offset(content, p.end.offset),
         kind,
     });
 }
@@ -153,8 +162,8 @@ fn collect_resolved_wikilink_spans(
         }
         if resolve_wikilink(&range.target).is_some() {
             out.push(RenderedSpan {
-                start: range.start,
-                end: range.end,
+                start: byte_to_utf16_offset(content, range.start),
+                end: byte_to_utf16_offset(content, range.end),
                 kind: RenderedKind::WikilinkResolved,
             });
         }
@@ -181,6 +190,28 @@ mod tests {
         assert_eq!(note.html, "");
         assert!(note.inline_spans.is_empty());
         assert!(note.block_spans.is_empty());
+    }
+
+    #[test]
+    fn byte_offset_conversion_non_ascii_bold() {
+        let src = "liên kết **bold**";
+        let note = render_markdown(src, never_resolve).expect("render");
+        let span = note.inline_spans.iter().find(|s| s.kind == RenderedKind::Strong).unwrap();
+        // "liên kết " is 9 UTF-16 code units (all BMP, 1 each)
+        // "liên kết **bold**" = 9 + 8 = 17
+        assert_eq!(span.start, 9);
+        assert_eq!(span.end, 17);
+    }
+
+    #[test]
+    fn byte_offset_conversion_non_ascii_wikilink() {
+        let src = "liên kết [[note]]";
+        let note = render_markdown(src, always_resolve).expect("render");
+        let span = note.inline_spans.iter().find(|s| matches!(s.kind, RenderedKind::WikilinkResolved)).unwrap();
+        // "liên kết " is 9 UTF-16 code units
+        // "liên kết [[note]]" = 9 + 8 = 17
+        assert_eq!(span.start, 9);
+        assert_eq!(span.end, 17);
     }
 
     #[test]
