@@ -23,6 +23,11 @@ vi.mock("react-force-graph-2d", async () => {
         d3ReheatSimulation: () => {},
         zoomToFit: () => {},
         centerAt: () => {},
+        zoom: () => 1,
+        d3Force: (_name: string) => ({
+          strength: () => ({} as never),
+          distance: () => ({} as never),
+        }),
       }));
 
       return (

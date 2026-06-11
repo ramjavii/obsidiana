@@ -49,8 +49,30 @@ function isHighlightedLink(
   return highlightSet.has(srcId) && highlightSet.has(tgtId);
 }
 
-const zoomControlBtn =
-  "flex items-center justify-center h-6 w-6 rounded bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 text-xs border border-zinc-700/50";
+const COLORS = {
+  bg: "#09090b",
+  brand: "#2563eb",
+  brandLight: "#3b82f6",
+  brandDim: "#1d4ed8",
+  active: "#22c55e",
+  activeGlow: "rgba(34, 197, 94, 0.25)",
+  child: "#eab308",
+  childGlow: "rgba(234, 179, 8, 0.2)",
+  empty: "#27272a",
+  emptyStroke: "rgba(255, 255, 255, 0.06)",
+  default: "#3f3f46",
+  defaultStroke: "rgba(255, 255, 255, 0.12)",
+  hovered: "#52525b",
+  labelBg: "rgba(9, 9, 11, 0.75)",
+  labelText: "rgba(212, 212, 216, 0.9)",
+  labelTextEmpty: "rgba(113, 113, 122, 0.6)",
+  link: "rgba(63, 63, 70, 0.8)",
+  linkHighlight: "rgba(37, 99, 235, 0.6)",
+  linkParticle: "#3b82f6",
+};
+
+const ctrlBtn =
+  "flex items-center justify-center h-7 w-7 rounded-md bg-zinc-900/90 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 border border-zinc-800/80 transition-colors duration-150";
 
 type Props = {
   activePath?: string;
@@ -63,6 +85,18 @@ export function GraphView({ activePath, onNodeClick }: Props) {
   const fgRef = useRef<ForceGraphMethods<any, any> | undefined>(undefined);
   const [graphSize, setGraphSize] = useState({ width: 256, height: 400 });
   const hoveredNodeId = useRef<string | null>(null);
+  const isDragging = useRef(false);
+
+  const query = useQuery<GraphData, AppError>({
+    queryKey: ["graph"],
+    queryFn: getGraphSnapshot,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    placeholderData: (prev) => prev,
+  });
+
+  const zoomedRef = useRef(false);
 
   const measuredRef = useCallback((el: HTMLDivElement | null) => {
     containerRef.current = el;
@@ -75,7 +109,9 @@ export function GraphView({ activePath, onNodeClick }: Props) {
     const update = () => {
       const rect = el.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
-        setGraphSize({ width: Math.round(rect.width), height: Math.round(rect.height) });
+        const w = Math.round(rect.width);
+        const h = Math.round(rect.height);
+        setGraphSize((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
       }
     };
 
@@ -84,17 +120,6 @@ export function GraphView({ activePath, onNodeClick }: Props) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (fgRef.current && graphSize.width > 0 && graphSize.height > 0) {
-      fgRef.current.d3ReheatSimulation();
-    }
-  }, [graphSize]);
-
-  const query = useQuery<GraphData, AppError>({
-    queryKey: ["graph"],
-    queryFn: getGraphSnapshot,
-  });
 
   const highlightSet = useMemo(
     () => (query.data ? computeHighlightSet(query.data.links, activePath) : null),
@@ -118,125 +143,249 @@ export function GraphView({ activePath, onNodeClick }: Props) {
     }
   }, [activePath, query.data]);
 
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg || !query.data || query.data.nodes.length === 0 || zoomedRef.current) return;
+    const timer = setTimeout(() => {
+      fg.zoomToFit(400, 40);
+      zoomedRef.current = true;
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [query.data]);
+
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+
+  const childrenSetRef = useRef(childrenSet);
+  childrenSetRef.current = childrenSet;
+
+  const highlightSetRef = useRef(highlightSet);
+  highlightSetRef.current = highlightSet;
+
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    const sim = fg as unknown as {
+      d3Force: (name: string) => {
+        strength?: (v: number) => void;
+        distance?: (v: number) => void;
+      } | undefined;
+    };
+    const charge = sim.d3Force("charge");
+    if (charge?.strength) charge.strength(-12);
+    const link = sim.d3Force("link");
+    if (link) {
+      if (link.distance) link.distance(50);
+    }
+    const center = sim.d3Force("center");
+    if (center?.strength) center.strength(0.05);
+  }, [query.data]);
+
   const handleNodeClick = useCallback(
-    (node: { id: string }) => onNodeClick?.(node.id),
+    (node: { id: string }) => {
+      if (isDragging.current) return;
+      onNodeClick?.(node.id);
+    },
     [onNodeClick],
   );
 
   const handleNodeHover = useCallback((node: { id: string } | null) => {
     hoveredNodeId.current = node?.id ?? null;
+    document.body.style.cursor = node ? "pointer" : "";
+  }, []);
+
+  const handleNodeDrag = useCallback(() => {
+    isDragging.current = true;
+  }, []);
+
+  const handleNodeDragEnd = useCallback(() => {
+    isDragging.current = false;
   }, []);
 
   const handleFitView = useCallback(() => {
     if (fgRef.current) {
-      fgRef.current.zoomToFit(400);
+      fgRef.current.zoomToFit(400, 40);
     }
   }, []);
 
-  function drawNode(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    r: number,
-    isEmpty: boolean,
-    active: boolean,
-    child: boolean,
-    hovered: boolean,
-    globalScale: number,
-  ) {
-    ctx.beginPath();
-    if (isEmpty) {
-      ctx.moveTo(x, y - r);
-      ctx.lineTo(x + r * 0.7, y);
-      ctx.lineTo(x, y + r);
-      ctx.lineTo(x - r * 0.7, y);
-      ctx.closePath();
-    } else {
-      ctx.arc(x, y, r, 0, 2 * Math.PI);
+  const handleZoomIn = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    const curZoom = (fg as unknown as { zoom: () => number }).zoom;
+    if (typeof curZoom === "function") {
+      (fg as unknown as { zoom: (v: number, ms: number) => void }).zoom(curZoom() * 1.3, 200);
     }
+  }, []);
 
-    ctx.fillStyle = active
-      ? "#10b981"
-      : child
-        ? "#fbbf24"
-        : isEmpty
-          ? "#3f3f46"
-          : hovered
-            ? "#71717a"
-            : "#52525b";
-    ctx.fill();
-    ctx.strokeStyle = isEmpty ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.15)";
-    ctx.lineWidth = 1 / globalScale;
-    ctx.stroke();
-
-    if (active) {
-      ctx.beginPath();
-      ctx.arc(x, y, r + 8 / globalScale, 0, 2 * Math.PI);
-      ctx.strokeStyle = "rgba(16, 185, 129, 0.5)";
-      ctx.lineWidth = 3 / globalScale;
-      ctx.stroke();
-    } else if (child) {
-      ctx.beginPath();
-      ctx.arc(x, y, r + 6 / globalScale, 0, 2 * Math.PI);
-      ctx.strokeStyle = "rgba(251, 191, 36, 0.45)";
-      ctx.lineWidth = 2.5 / globalScale;
-      ctx.stroke();
+  const handleZoomOut = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    const curZoom = (fg as unknown as { zoom: () => number }).zoom;
+    if (typeof curZoom === "function") {
+      (fg as unknown as { zoom: (v: number, ms: number) => void }).zoom(curZoom() / 1.3, 200);
     }
+  }, []);
 
-    if (hovered && !active && !child) {
+  const drawNode = useCallback(
+    (
+      ctx: CanvasRenderingContext2D,
+      x: number,
+      y: number,
+      r: number,
+      isEmpty: boolean,
+      active: boolean,
+      child: boolean,
+      hovered: boolean,
+      globalScale: number,
+    ) => {
+      const lineWidth = 1.2 / globalScale;
+
+      if (active) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 10 / globalScale, 0, 2 * Math.PI);
+        ctx.fillStyle = COLORS.activeGlow;
+        ctx.fill();
+      } else if (child) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 7 / globalScale, 0, 2 * Math.PI);
+        ctx.fillStyle = COLORS.childGlow;
+        ctx.fill();
+      }
+
       ctx.beginPath();
-      ctx.arc(x, y, r + 5 / globalScale, 0, 2 * Math.PI);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-      ctx.lineWidth = 2 / globalScale;
+      if (isEmpty) {
+        const s = r * 0.8;
+        ctx.moveTo(x, y - s);
+        ctx.lineTo(x + s * 0.75, y);
+        ctx.lineTo(x, y + s);
+        ctx.lineTo(x - s * 0.75, y);
+        ctx.closePath();
+      } else {
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+      }
+
+      ctx.fillStyle = active
+        ? COLORS.active
+        : child
+          ? COLORS.child
+          : isEmpty
+            ? COLORS.empty
+            : hovered
+              ? COLORS.hovered
+              : COLORS.default;
+      ctx.fill();
+
+      ctx.strokeStyle = isEmpty
+        ? COLORS.emptyStroke
+        : hovered
+          ? "rgba(255, 255, 255, 0.25)"
+          : COLORS.defaultStroke;
+      ctx.lineWidth = hovered ? 1.8 / globalScale : lineWidth;
       ctx.stroke();
-    }
-  }
+
+      if (active) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 5 / globalScale, 0, 2 * Math.PI);
+        ctx.strokeStyle = COLORS.active;
+        ctx.lineWidth = 2.2 / globalScale;
+        ctx.stroke();
+      } else if (child) {
+        ctx.beginPath();
+        ctx.arc(x, y, r + 4 / globalScale, 0, 2 * Math.PI);
+        ctx.strokeStyle = COLORS.child;
+        ctx.lineWidth = 1.8 / globalScale;
+        ctx.stroke();
+      }
+    },
+    [],
+  );
 
   const nodeCanvasObject = useCallback(
     (node: { x?: number; y?: number; id: string; title?: string }, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const n = node as GraphNode;
       const label = n.title ?? n.id ?? "";
       const isEmpty = n.isEmpty ?? false;
-      const isActive = n.id === activePath;
-      const isChild = childrenSet?.has(n.id) ?? false;
+      const curActive = activePathRef.current;
+      const curChildren = childrenSetRef.current;
+      const isActive = n.id === curActive;
+      const isChild = curChildren?.has(n.id) ?? false;
       const isHovered = n.id === hoveredNodeId.current;
 
       const r = isActive
-        ? Math.sqrt(6 / 6) * 6
+        ? 5
         : isEmpty
-          ? Math.sqrt(1.2 / 6) * 6 * 0.85
-          : Math.sqrt(1.5 / 6) * 6;
+          ? 3
+          : isChild
+            ? 3.5
+            : 3;
       const x = node.x ?? 0;
       const y = node.y ?? 0;
 
       drawNode(ctx, x, y, r, isEmpty, isActive, isChild, isHovered, globalScale);
 
-      const fontSize = Math.max(7, 10 / globalScale);
-      ctx.font = `${fontSize}px system-ui, sans-serif`;
+      const fontSize = Math.max(5 / globalScale, 2.5);
+      ctx.font = `500 ${fontSize}px "Fira Sans", system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
 
       const labelY = y + r + 4 / globalScale;
       const metrics = ctx.measureText(label);
-      const pad = 3 / globalScale;
-      const bw = metrics.width + pad * 2;
-      const bh = fontSize + pad * 2;
+      const padX = 4 / globalScale;
+      const padY = 2 / globalScale;
+      const bw = metrics.width + padX * 2;
+      const bh = fontSize + padY * 2;
 
-      ctx.fillStyle = "rgba(9, 9, 11, 0.75)";
+      ctx.fillStyle = COLORS.labelBg;
       if (ctx.roundRect) {
-        const rad = 3 / globalScale;
+        const rad = 4 / globalScale;
         ctx.beginPath();
-        ctx.roundRect(x - bw / 2, labelY - pad, bw, bh, rad);
+        ctx.roundRect(x - bw / 2, labelY - padY, bw, bh, rad);
         ctx.fill();
       } else {
-        ctx.fillRect(x - bw / 2, labelY - pad, bw, bh);
+        ctx.fillRect(x - bw / 2, labelY - padY, bw, bh);
       }
 
-      ctx.fillStyle = isEmpty ? "rgba(161, 161, 170, 0.6)" : "rgba(212, 212, 216, 0.95)";
+      ctx.fillStyle = isEmpty ? COLORS.labelTextEmpty : COLORS.labelText;
       ctx.textBaseline = "top";
       ctx.fillText(label, x, labelY);
     },
-    [activePath, childrenSet],
+    [drawNode],
+  );
+
+  const nodeVal = useCallback(
+    (node: GraphNode) => {
+      if (node.id === activePathRef.current) return 4;
+      if (childrenSetRef.current?.has(node.id)) return 2;
+      return 1;
+    },
+    [],
+  );
+
+  const nodeColor = useCallback(
+    (node: GraphNode) => {
+      const id = node.id;
+      if (id === activePathRef.current) return COLORS.active;
+      if (childrenSetRef.current?.has(id)) return COLORS.child;
+      if ((node as GraphNode).isEmpty) return COLORS.empty;
+      return COLORS.default;
+    },
+    [],
+  );
+
+  const linkColor = useCallback(
+    (link: GraphLink) =>
+      isHighlightedLink(link, highlightSetRef.current) ? COLORS.linkHighlight : COLORS.link,
+    [],
+  );
+
+  const linkWidth = useCallback(
+    (link: GraphLink) => (isHighlightedLink(link, highlightSetRef.current) ? 1.5 : 0.6),
+    [],
+  );
+
+  const linkDirectionalParticleColor = useCallback(
+    () => COLORS.linkParticle,
+    [],
   );
 
   return (
@@ -271,57 +420,65 @@ export function GraphView({ activePath, onNodeClick }: Props) {
             ref={fgRef}
             graphData={query.data}
             nodeLabel="title"
-            nodeRelSize={6}
-            nodeVal={(node) =>
-              (node as GraphNode).id === activePath ? 6 : 1.5
+            nodeRelSize={3}
+            nodeVal={nodeVal}
+            nodeColor={nodeColor}
+            linkColor={linkColor}
+            linkWidth={linkWidth}
+            linkCurvature={0.2}
+            linkDirectionalParticles={(link) =>
+              isHighlightedLink(link, highlightSetRef.current) ? 2 : 0
             }
-            nodeColor={(node) => {
-              const id = (node as GraphNode).id;
-              if (id === activePath) return "#10b981";
-              if (childrenSet?.has(id)) return "#fbbf24";
-              return "#52525b";
-            }}
-            linkColor={(link) =>
-              isHighlightedLink(link as GraphLink, highlightSet)
-                ? "#a1a1aa"
-                : "#3f3f46"
-            }
-            linkWidth={(link) =>
-              isHighlightedLink(link as GraphLink, highlightSet) ? 4 : 1.5
-            }
-            linkCurvature={0.25}
-            linkDirectionalParticles={2}
-            linkDirectionalParticleSpeed={0.005}
-            linkDirectionalParticleWidth={5}
-            linkDirectionalParticleColor={(link) =>
-              isHighlightedLink(link as GraphLink, highlightSet)
-                ? "#10b981"
-                : "#d4d4d8"
-            }
-            backgroundColor="#09090b"
+            linkDirectionalParticleSpeed={0.004}
+            linkDirectionalParticleWidth={2}
+            linkDirectionalParticleColor={linkDirectionalParticleColor}
+            backgroundColor={COLORS.bg}
             width={graphSize.width}
             height={graphSize.height}
             onNodeClick={handleNodeClick}
             onNodeHover={handleNodeHover}
-            d3AlphaDecay={0.08}
-            d3VelocityDecay={0.6}
-            warmupTicks={200}
-            cooldownTicks={500}
-            cooldownTime={5000}
+            onNodeDrag={handleNodeDrag}
+            onNodeDragEnd={handleNodeDragEnd}
+            d3AlphaDecay={0.12}
+            d3VelocityDecay={0.5}
+            warmupTicks={150}
+            cooldownTicks={120}
+            cooldownTime={2000}
             nodeCanvasObjectMode={() => "replace"}
             nodeCanvasObject={nodeCanvasObject}
           />
         )}
       </div>
       {query.data && query.data.nodes.length > 0 && (
-        <div className="absolute bottom-2 right-2 flex flex-col gap-1">
+        <div className="absolute bottom-3 right-3 flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            className={ctrlBtn}
+            title="Zoom in"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            className={ctrlBtn}
+            title="Zoom out"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" d="M5 12h14" />
+            </svg>
+          </button>
+          <div className="h-px bg-zinc-800 my-0.5" />
           <button
             type="button"
             onClick={handleFitView}
-            className={zoomControlBtn}
+            className={ctrlBtn}
             title="Fit view"
           >
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
             </svg>
           </button>
